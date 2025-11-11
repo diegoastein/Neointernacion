@@ -1,0 +1,1850 @@
+<!DOCTYPE html>
+<html lang="es" class="h-full">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seguimiento Pediátrico</title>
+    <!-- Carga de Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Carga de la fuente Inter -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            overscroll-behavior: none; /* Evita el "rebote" en móviles */
+        }
+
+        /* Estilos para el menú desplegable múltiple personalizado */
+        .multi-select-container {
+            position: relative;
+        }
+
+        .multi-select-trigger {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            width: 100%;
+            padding: 0.625rem; /* 10px / p-2.5 */
+            background-color: #f9fafb; /* bg-gray-50 */
+            border: 1px solid #d1d5db; /* border-gray-300 */
+            border-radius: 0.5rem; /* rounded-lg */
+            font-size: 0.875rem; /* text-sm */
+            color: #111827; /* text-gray-900 */
+            cursor: pointer;
+        }
+
+        .multi-select-trigger:focus {
+            outline: 2px solid transparent;
+            outline-offset: 2px;
+            border-color: #2563eb; /* focus:border-blue-500 */
+            box-shadow: 0 0 0 2px #bfdbfe; /* focus:ring-blue-500 */
+        }
+
+        .multi-select-dropdown {
+            position: absolute;
+            top: 100%;
+            left: 0;
+            right: 0;
+            z-index: 10;
+            max-height: 200px;
+            overflow-y: auto;
+            background-color: white;
+            border: 1px solid #d1d5db;
+            border-top: none;
+            border-radius: 0 0 0.5rem 0.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .multi-select-dropdown.hidden {
+            display: none;
+        }
+
+        .multi-select-option {
+            display: block;
+            width: 100%;
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            text-align: left;
+            cursor: pointer;
+        }
+        
+        .multi-select-option:hover {
+            background-color: #f3f4f6; /* bg-gray-100 */
+        }
+        
+        .multi-select-option label {
+            display: flex;
+            align-items: center;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        .multi-select-option input[type="checkbox"] {
+            margin-right: 0.5rem; /* mr-2 */
+            cursor: pointer;
+        }
+        
+        .multi-select-add-new {
+            padding: 0.5rem 0.75rem;
+            font-size: 0.875rem;
+            color: #1d4ed8; /* text-blue-700 */
+            font-weight: 500; /* medium */
+            cursor: pointer;
+            border-top: 1px solid #e5e7eb; /* border-t border-gray-200 */
+        }
+        
+        .multi-select-add-new:hover {
+            background-color: #eff6ff; /* bg-blue-50 */
+        }
+
+        /* Ocultar scrollbars */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none; /* IE y Edge */
+            scrollbar-width: none; /* Firefox */
+        }
+
+        /* Estilo de página */
+        .page {
+            display: none;
+        }
+        .page.active {
+            display: block;
+        }
+        
+        /* Ocultar spinner de inputs numéricos */
+        input[type=number]::-webkit-inner-spin-button, 
+        input[type=number]::-webkit-outer-spin-button { 
+          -webkit-appearance: none; 
+          margin: 0; 
+        }
+        input[type=number] {
+          -moz-appearance: textfield; /* Firefox */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 h-full overflow-hidden">
+
+    <!-- Contenedor principal de la aplicación -->
+    <div class="h-full w-full max-w-lg mx-auto bg-white shadow-lg flex flex-col">
+
+        <!-- ===== PÁGINA DE LOGIN ===== -->
+        <div id="page-login" class="page active flex-grow flex flex-col justify-center items-center p-6">
+            <h1 class="text-3xl font-bold text-teal-700 mb-2">Bienvenida</h1>
+            <p class="text-gray-600 mb-8">Iniciá sesión para ver tus pacientes.</p>
+            
+            <form id="form-login" class="w-full space-y-4">
+                <div>
+                    <label for="login-email" class="block text-sm font-medium text-gray-700">Email</label>
+                    <input type="email" id="login-email" autocomplete="email" required class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                </div>
+                <div>
+                    <label for="login-password" class="block text-sm font-medium text-gray-700">Contraseña</label>
+                    <input type="password" id="login-password" autocomplete="current-password" required class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                </div>
+                
+                <p id="login-error" class="text-sm text-red-600 hidden"></p>
+                
+                <div class="pt-2">
+                    <button type="submit" id="btn-login" class="w-full bg-teal-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 flex justify-center items-center">
+                        <span class="btn-login-text">Ingresar</span>
+                        <!-- Icono de carga para login -->
+                        <svg id="login-spinner" class="animate-spin h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        <!-- ===== PÁGINA DE CARGA (post-login) ===== -->
+        <div id="page-loading" class="page flex-grow flex flex-col justify-center items-center text-gray-500">
+            <!-- Icono de carga SVG -->
+            <svg class="animate-spin h-12 w-12 text-teal-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p class="mt-4 text-lg font-medium">Cargando tus datos...</p>
+        </div>
+
+        <!-- ===== PÁGINA: LISTA DE PACIENTES ===== -->
+        <div id="page-list" class="page flex-grow flex flex-col h-full">
+            <!-- Cabecera -->
+            <header class="bg-teal-700 text-white p-4 shadow-md z-10">
+                <div class="flex justify-between items-center">
+                    <h1 class="text-2xl font-bold">Pacientes</h1>
+                    <button id="btn-admin-page" class="p-2 rounded-full hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-white">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    </button>
+                </div>
+                <div class="mt-4">
+                    <input type="search" id="search-bar" class="w-full px-4 py-2 rounded-full text-gray-800 focus:outline-none" placeholder="Buscar paciente...">
+                </div>
+            </header>
+
+            <!-- Lista -->
+            <main class="flex-grow overflow-y-auto no-scrollbar p-4 space-y-3">
+                <ul id="patient-list" class="divide-y divide-gray-200">
+                    <!-- Los pacientes se insertarán aquí -->
+                </ul>
+                <p id="no-patients" class="text-center text-gray-500 py-10">No hay pacientes cargados.</p>
+            </main>
+
+            <!-- Botón flotante para agregar -->
+            <button id="btn-add-patient" class="absolute bottom-6 right-6 bg-teal-600 text-white rounded-full p-4 shadow-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+            </button>
+        </div>
+
+        <!-- ===== PÁGINA: DETALLE DEL PACIENTE ===== -->
+        <div id="page-patient-detail" class="page flex-grow flex flex-col h-full">
+            <!-- Cabecera -->
+            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
+                <button id="btn-back-to-list" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <h1 id="detail-patient-name" class="text-xl font-bold text-gray-800 truncate px-2">Nombre Paciente</h1>
+                <button id="btn-edit-patient" class="p-2 rounded-full text-gray-600 hover:bg-gray-200 flex-shrink-0">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L16.732 3.732z"></path></svg>
+                </button>
+            </header>
+
+            <!-- Contenido -->
+            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
+                <div class="space-y-4">
+                    <!-- Info Básica -->
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Edad</label>
+                                <p id="detail-patient-age" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">F. Nacimiento</label>
+                                <p id="detail-patient-dob" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Peso al Nacer</label>
+                                <p id="detail-patient-birthWeight" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Edad Gest.</label>
+                                <p id="detail-patient-gestationalAge" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Contacto y Cobertura -->
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Madre</label>
+                                <p id="detail-patient-motherName" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Teléfono</label>
+                                <a href="#" id="detail-patient-motherPhone" class="text-lg font-semibold text-teal-700 hover:underline"></a>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Cobertura</label>
+                                <p id="detail-patient-coverage" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Lugar de Atención</label>
+                                <p id="detail-patient-location" class="text-lg font-semibold text-gray-900"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Antecedentes y Notas -->
+                    <div class="bg-white p-4 rounded-lg shadow">
+                        <div class="space-y-3">
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Antecedentes</label>
+                                <div id="detail-patient-antecedentes" class="flex flex-wrap gap-2 mt-1">
+                                    <!-- Se rellena dinámicamente -->
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium text-gray-500">Notas Generales</label>
+                                <p id="detail-patient-notes" class="text-gray-800 whitespace-pre-wrap"></p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Pendientes -->
+                    <div id="detail-pendientes-container" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg shadow">
+                        <div class="flex justify-between items-center">
+                            <h3 class="text-lg font-semibold text-yellow-800">Pendientes</h3>
+                            <button id="btn-resolve-pendientes" class="text-sm bg-yellow-200 text-yellow-800 px-3 py-1 rounded-full hover:bg-yellow-300">Resolver</button>
+                        </div>
+                        <p id="detail-patient-pendientes" class="text-yellow-700 whitespace-pre-wrap mt-2"></p>
+                    </div>
+
+                    <!-- Próxima Consulta -->
+                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg shadow">
+                        <h3 class="text-lg font-semibold text-blue-800">Próxima Consulta</h3>
+                        <p id="detail-patient-nextAppointment" class="text-blue-700"></p>
+                    </div>
+
+                    <!-- Historial de Consultas -->
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-800 mb-2">Historial de Consultas</h3>
+                        <div id="consult-history-list" class="space-y-2">
+                            <!-- Historial se carga aquí -->
+                        </div>
+                    </div>
+                </div>
+            </main>
+
+            <!-- Botón flotante para consulta -->
+            <button id="btn-add-consult" class="absolute bottom-6 right-6 bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+            </button>
+        </div>
+
+        <!-- ===== PÁGINA: FORMULARIO PACIENTE (Agregar/Editar) ===== -->
+        <div id="page-patient-form" class="page flex-grow flex flex-col h-full">
+            <!-- Cabecera -->
+            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
+                <button id="btn-cancel-patient" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+                <h1 id="patient-form-title" class="text-xl font-bold text-gray-800">Nuevo Paciente</h1>
+                <button id="btn-delete-patient" class="p-2 rounded-full text-red-500 hover:bg-red-100 hidden">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </header>
+
+            <!-- Formulario -->
+            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
+                <form id="form-patient" class="space-y-4">
+                    <input type="hidden" id="patient-id">
+                    <div>
+                        <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
+                        <input type="text" id="nombre" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
+                    </div>
+                    <div>
+                        <label for="madre" class="block text-sm font-medium text-gray-700">Nombre de la Madre</label>
+                        <input type="text" id="madre" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                    </div>
+                    <div>
+                        <label for="telefono" class="block text-sm font-medium text-gray-700">Teléfono de la Madre</label>
+                        <input type="tel" id="telefono" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                    </div>
+                    <div>
+                        <label for="dob" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
+                        <input type="date" id="dob" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
+                    </div>
+                    <div>
+                        <label for="birthWeight" class="block text-sm font-medium text-gray-700">Peso al Nacer (grs)</label>
+                        <input type="number" id="birthWeight" placeholder="Ej: 3200" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                    </div>
+                    <div>
+                        <label for="gestationalAge" class="block text-sm font-medium text-gray-700">Edad Gestacional (sem)</label>
+                        <input type="number" id="gestationalAge" placeholder="Ej: 39" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                    </div>
+                    
+                    <!-- Campo Personalizado: Cobertura -->
+                    <div>
+                        <label for="cobertura" class="block text-sm font-medium text-gray-700">Cobertura Médica</label>
+                        <select id="cobertura" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                            <option value="Particular">Particular</option>
+                            <option value="IOMA">IOMA</option>
+                            <option value="Otras">Otras</option>
+                            <option value="add_new_cobertura">+ Agregar nueva...</option>
+                        </select>
+                    </div>
+
+                    <!-- Campo Personalizado: Lugar -->
+                    <div>
+                        <label for="lugar" class="block text-sm font-medium text-gray-700">Lugar de Atención</label>
+                        <select id="lugar" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                            <option value="Caseros">Caseros</option>
+                            <option value="Alsina">Alsina</option>
+                            <option value="Hospital">Hospital</option>
+                            <option value="add_new_lugar">+ Agregar nueva...</option>
+                        </select>
+                    </div>
+
+                    <!-- Campo Personalizado: Antecedentes (Selección Múltiple) -->
+                    <div>
+                        <label for="antecedentes-trigger" class="block text-sm font-medium text-gray-700">Antecedentes Relevantes</label>
+                        <div class="multi-select-container mt-1">
+                            <button type="button" id="antecedentes-trigger" class="multi-select-trigger">
+                                <span>Seleccionar...</span>
+                                <!-- Icono flecha abajo -->
+                                <svg class="w-5 h-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                </svg>
+                            </button>
+                            <div id="antecedentes-dropdown" class="multi-select-dropdown hidden">
+                                <div id="antecedentes-options" class="divide-y divide-gray-100">
+                                    <!-- Opciones se cargan dinámicamente -->
+                                </div>
+                                <div id="antecedentes-add-new" class="multi-select-add-new">
+                                    + Agregar nueva...
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label for="notas" class="block text-sm font-medium text-gray-700">Notas Generales</label>
+                        <textarea id="notas" rows="4" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
+                    </div>
+                    
+                    <div class="pt-4">
+                        <button type="submit" class="w-full bg-teal-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                            Guardar Paciente
+                        </button>
+                    </div>
+                </form>
+            </main>
+        </div>
+        
+        <!-- ===== PÁGINA: FORMULARIO CONSULTA (Agregar/Editar) ===== -->
+        <div id="page-consult-form" class="page flex-grow flex flex-col h-full">
+            <!-- Cabecera -->
+            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
+                <button id="btn-cancel-consult" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <h1 id="consult-form-title" class="text-xl font-bold text-gray-800">Nueva Consulta</h1>
+                <button id="btn-delete-consult" class="p-2 rounded-full text-red-500 hover:bg-red-100 hidden">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                </button>
+            </header>
+
+            <!-- Formulario -->
+            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
+                <form id="form-consult" class="space-y-4">
+                    <input type="hidden" id="consult-id">
+                    <input type="hidden" id="consult-patient-id">
+                    
+                    <div>
+                        <label for="consult-date" class="block text-sm font-medium text-gray-700">Fecha de Consulta</label>
+                        <input type="date" id="consult-date" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
+                    </div>
+
+                    <!-- Campo Personalizado: Motivo -->
+                    <div>
+                        <label for="consult-motivo" class="block text-sm font-medium text-gray-700">Motivo de Consulta</label>
+                        <select id="consult-motivo" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                            <option value="Control de salud">Control de salud</option>
+                            <option value="Control pre escolar">Control pre escolar</option>
+                            <option value="Patología aguda">Patología aguda</option>
+                            <option value="Otras">Otras</option>
+                            <option value="add_new_motivo">+ Agregar nuevo...</option>
+                        </select>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label for="consult-peso" class="block text-sm font-medium text-gray-700">Peso (kg)</label>
+                            <input type="number" step="0.01" id="consult-peso" placeholder="Ej: 5.2" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="consult-talla" class="block text-sm font-medium text-gray-700">Talla (cm)</label>
+                            <input type="number" step="0.1" id="consult-talla" placeholder="Ej: 55.5" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                        </div>
+                        <div>
+                            <label for="consult-pc" class="block text-sm font-medium text-gray-700">PC (cm)</label>
+                            <input type="number" step="0.1" id="consult-pc" placeholder="Ej: 38.2" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700">Control de Vacunas</label>
+                        <div class="mt-2 space-x-4">
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="vacunas" value="Completa" class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300">
+                                <span class="ml-2 text-sm text-gray-700">Completa</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="vacunas" value="Incompleta" class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300">
+                                <span class="ml-2 text-sm text-gray-700">Incompleta</span>
+                            </label>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <label for="consult-notas" class="block text-sm font-medium text-gray-700">Notas de la Consulta</label>
+                        <textarea id="consult-notas" rows="5" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
+                    </div>
+
+                    <div>
+                        <label for="consult-pendientes" class="block text-sm font-medium text-gray-700">Pendientes (para próxima consulta)</label>
+                        <textarea id="consult-pendientes" rows="3" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" placeholder="Ej: Traer análisis, interconsulta con..."></textarea>
+                    </div>
+
+                    <div>
+                        <label for="consult-next" class="block text-sm font-medium text-gray-700">Programar Próxima Consulta</label>
+                        <input type="date" id="consult-next" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                    </div>
+                    
+                    <div class="pt-4">
+                        <button type="submit" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                            Guardar Consulta
+                        </button>
+                    </div>
+                </form>
+            </main>
+        </div>
+        
+        <!-- ===== PÁGINA: ADMINISTRACIÓN ===== -->
+        <div id="page-admin" class="page flex-grow flex flex-col h-full">
+            <!-- Cabecera -->
+            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
+                <button id="btn-back-to-list-from-admin" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+                </button>
+                <h1 class="text-xl font-bold text-gray-800">Administración</h1>
+                <div></div> <!-- Placeholder para centrar título -->
+            </header>
+
+            <!-- Contenido -->
+            <main class="flex-grow overflow-y-auto no-scrollbar p-4 space-y-6">
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">Exportar Datos</h2>
+                    <p class="text-sm text-gray-600 mt-1">Exporta todos los datos de pacientes y consultas a un archivo CSV (Excel).</p>
+                    <button id="btn-export-csv" class="mt-3 w-full bg-green-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                        Exportar a CSV
+                    </button>
+                </div>
+                
+                <div>
+                    <h2 class="text-lg font-semibold text-gray-800">Estado de la Conexión</h2>
+                    <p class="text-sm text-gray-600 mt-1">Información de tu base de datos privada.</p>
+                    <div class="mt-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <div class="flex items-center">
+                            <span id="connection-status-icon" class="w-3 h-3 bg-gray-400 rounded-full mr-2"></span>
+                            <span id="connection-status-text" class="text-gray-700">Conectando...</span>
+                        </div>
+                        <p id="admin-user-email" class="text-xs text-gray-500 mt-2 truncate">No autenticado</p>
+                    </div>
+                </div>
+
+                <div class="border-t border-gray-200 pt-6">
+                    <h2 class="text-lg font-semibold text-gray-800">Sesión</h2>
+                    <button id="btn-logout" class="mt-3 w-full bg-gray-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
+                        Cerrar Sesión
+                    </button>
+                </div>
+                
+                <div class="border-t border-gray-200 pt-6">
+                    <h2 class="text-lg font-semibold text-gray-800">Zona de Peligro</h2>
+                    <p class="text-sm text-gray-600 mt-1">Esta acción no se puede deshacer.</p>
+                    <button id="btn-delete-all-data" class="mt-3 w-full bg-red-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                        Borrar TODOS mis datos
+                    </button>
+                </div>
+            </main>
+        </div>
+
+    </div> <!-- Fin del contenedor principal -->
+
+    <!-- ===== MODAL DE CONFIRMACIÓN (genérico) ===== -->
+    <div id="modal-confirm" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-40 flex justify-center items-center p-4 hidden">
+        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div class="p-6">
+                <h3 id="modal-confirm-title" class="text-xl font-semibold text-gray-900">Confirmar Acción</h3>
+                <p id="modal-confirm-body" class="mt-2 text-gray-600">¿Estás seguro?</p>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
+                <button id="modal-confirm-cancel" class_original="bg-white text-gray-700 border border-gray-300 hover:bg-gray-50" class="py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
+                    Cancelar
+                </button>
+                <button id="modal-confirm-ok" class_original="bg-red-600 text-white hover:bg-red-700" class="py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                    Confirmar
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ===== MODAL DE PROMPT (genérico) ===== -->
+    <div id="modal-prompt" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-40 flex justify-center items-center p-4 hidden">
+        <form id="form-prompt" class="bg-white rounded-lg shadow-xl w-full max-w-sm">
+            <div class="p-6">
+                <h3 id="modal-prompt-title" class="text-xl font-semibold text-gray-900">Nuevo Valor</h3>
+                <label id="modal-prompt-label" for="modal-prompt-input" class="mt-2 text-sm text-gray-600 block">Introduce un valor:</label>
+                <input type="text" id="modal-prompt-input" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
+            </div>
+            <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
+                <button type="button" id="modal-prompt-cancel" class="bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
+                    Cancelar
+                </button>
+                <button type="submit" id="modal-prompt-ok" class="bg-teal-600 text-white hover:bg-teal-700 py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    Aceptar
+                </button>
+            </div>
+        </form>
+    </div>
+
+
+    <!-- Scripts de Firebase -->
+    <script type="module">
+        // --- SDKs de Firebase ---
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            onAuthStateChanged, 
+            signInWithEmailAndPassword,
+            signOut,
+            setPersistence,
+            browserLocalPersistence // Almacena la sesión localmente
+            // --- FIX: Removido setLogLevel as setAuthLogLevel ---
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            getDoc, 
+            setDoc, 
+            onSnapshot, 
+            setLogLevel as setFirestoreLogLevel 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        /**
+         * ----------------------------------------------------------------
+         * APLICACIÓN DE SEGUIMIENTO PEDIÁTRICO (v2 con Login)
+         * ----------------------------------------------------------------
+         */
+        const App = {
+            // Firebase
+            app: null,
+            auth: null,
+            db: null,
+            dbUnsubscribe: null, // Para desconectar el listener de Firestore
+            
+            // Estado de la App
+            appId: 'default-app-id', // ID de la app (para la ruta de la DB)
+            userId: null, // ID del usuario LOGUEADO
+            currentPatientId: null, 
+            currentConsultId: null, 
+            dbRef: null, // Referencia al documento PRIVADO de la base de datos
+            
+            // Estado de los datos (caché local)
+            data: {
+                patients: {}, 
+                consults: {}, 
+                options: { 
+                    cobertura: ["Particular", "IOMA", "Otras"],
+                    lugar: ["Caseros", "Alsina", "Hospital"],
+                    antecedentes: ["Prematurez", "Bajo peso al nacer", "Ictericia", "Bronquiolitis", "Neumonia"],
+                    motivo: ["Control de salud", "Control pre escolar", "Patología aguda", "Otras"]
+                }
+            },
+
+            // Referencias a elementos del DOM
+            dom: {},
+
+            /**
+             * INICIO DE LA APLICACIÓN
+             */
+            init() {
+                try {
+                    // --- FIX: Removido setAuthLogLevel('debug') ---
+                    setFirestoreLogLevel('debug');
+                } catch(e) { console.warn("No se pudo activar el log de Firebase", e); }
+
+                this.cacheDOM();
+                this.addEventListeners();
+                this.initFirebase();
+            },
+
+            /**
+             * Almacena referencias a elementos del DOM
+             */
+            cacheDOM() {
+                this.dom.pages = {
+                    login: document.getElementById('page-login'),
+                    loading: document.getElementById('page-loading'),
+                    list: document.getElementById('page-list'),
+                    detail: document.getElementById('page-patient-detail'),
+                    patientForm: document.getElementById('page-patient-form'),
+                    consultForm: document.getElementById('page-consult-form'),
+                    admin: document.getElementById('page-admin'),
+                };
+                
+                this.dom.modals = {
+                    confirm: document.getElementById('modal-confirm'),
+                    confirmTitle: document.getElementById('modal-confirm-title'),
+                    confirmBody: document.getElementById('modal-confirm-body'),
+                    confirmOk: document.getElementById('modal-confirm-ok'),
+                    confirmCancel: document.getElementById('modal-confirm-cancel'),
+                    prompt: document.getElementById('modal-prompt'),
+                    promptForm: document.getElementById('form-prompt'),
+                    promptTitle: document.getElementById('modal-prompt-title'),
+                    promptLabel: document.getElementById('modal-prompt-label'),
+                    promptInput: document.getElementById('modal-prompt-input'),
+                    promptOk: document.getElementById('modal-prompt-ok'),
+                    promptCancel: document.getElementById('modal-prompt-cancel'),
+                };
+
+                // --- Formulario Login ---
+                this.dom.loginForm = {
+                    form: document.getElementById('form-login'),
+                    email: document.getElementById('login-email'),
+                    password: document.getElementById('login-password'),
+                    error: document.getElementById('login-error'),
+                    submitButton: document.getElementById('btn-login'),
+                    submitText: document.querySelector('.btn-login-text'),
+                    submitSpinner: document.getElementById('login-spinner'),
+                };
+
+                // --- Formulario Paciente ---
+                this.dom.patientForm = {
+                    form: document.getElementById('form-patient'),
+                    title: document.getElementById('patient-form-title'),
+                    id: document.getElementById('patient-id'),
+                    nombre: document.getElementById('nombre'),
+                    madre: document.getElementById('madre'),
+                    telefono: document.getElementById('telefono'),
+                    dob: document.getElementById('dob'),
+                    birthWeight: document.getElementById('birthWeight'),
+                    gestationalAge: document.getElementById('gestationalAge'),
+                    cobertura: document.getElementById('cobertura'),
+                    lugar: document.getElementById('lugar'),
+                    antecedentesTrigger: document.getElementById('antecedentes-trigger'),
+                    antecedentesDropdown: document.getElementById('antecedentes-dropdown'),
+                    antecedentesOptions: document.getElementById('antecedentes-options'),
+                    antecedentesAddNew: document.getElementById('antecedentes-add-new'),
+                    notas: document.getElementById('notas'),
+                    deleteButton: document.getElementById('btn-delete-patient'),
+                };
+
+                // --- Formulario Consulta ---
+                this.dom.consultForm = {
+                    form: document.getElementById('form-consult'),
+                    title: document.getElementById('consult-form-title'),
+                    id: document.getElementById('consult-id'),
+                    patientId: document.getElementById('consult-patient-id'),
+                    date: document.getElementById('consult-date'),
+                    motivo: document.getElementById('consult-motivo'),
+                    peso: document.getElementById('consult-peso'),
+                    talla: document.getElementById('consult-talla'),
+                    pc: document.getElementById('consult-pc'),
+                    vacunas: document.getElementsByName('vacunas'),
+                    notas: document.getElementById('consult-notas'),
+                    pendientes: document.getElementById('consult-pendientes'),
+                    next: document.getElementById('consult-next'),
+                    deleteButton: document.getElementById('btn-delete-consult'),
+                };
+                
+                // --- Otros ---
+                this.dom.searchBar = document.getElementById('search-bar');
+                this.dom.patientList = document.getElementById('patient-list');
+                this.dom.noPatients = document.getElementById('no-patients');
+                this.dom.connectionIcon = document.getElementById('connection-status-icon');
+                this.dom.connectionText = document.getElementById('connection-status-text');
+                this.dom.adminUserEmail = document.getElementById('admin-user-email');
+                this.dom.detailMotherPhone = document.getElementById('detail-patient-motherPhone');
+            },
+
+            /**
+             * Configura los listeners de eventos de la UI
+             */
+            addEventListeners() {
+                // --- Login/Logout ---
+                this.dom.loginForm.form.onsubmit = (e) => this.handleLogin(e);
+                document.getElementById('btn-logout').onclick = () => this.handleLogout();
+
+                // --- Navegación ---
+                document.getElementById('btn-add-patient').onclick = () => this.showPatientForm();
+                document.getElementById('btn-admin-page').onclick = () => this.navigate('admin');
+                document.getElementById('btn-back-to-list').onclick = () => this.navigate('list');
+                document.getElementById('btn-back-to-list-from-admin').onclick = () => this.navigate('list');
+                document.getElementById('btn-cancel-patient').onclick = () => this.navigate(this.currentPatientId ? 'detail' : 'list');
+                document.getElementById('btn-edit-patient').onclick = () => this.showPatientForm(this.currentPatientId);
+                
+                document.getElementById('btn-add-consult').onclick = () => this.showConsultForm(this.currentPatientId);
+                document.getElementById('btn-cancel-consult').onclick = () => this.navigate('detail');
+                
+                // Búsqueda
+                this.dom.searchBar.oninput = () => this.renderPatientList();
+                
+                // Formularios
+                this.dom.patientForm.form.onsubmit = (e) => this.handleSavePatient(e);
+                this.dom.consultForm.form.onsubmit = (e) => this.handleSaveConsult(e);
+                
+                // Selects personalizados
+                this.dom.patientForm.cobertura.onchange = (e) => this.handleCustomSelect(e, 'cobertura');
+                this.dom.patientForm.lugar.onchange = (e) => this.handleCustomSelect(e, 'lugar');
+                this.dom.consultForm.motivo.onchange = (e) => this.handleCustomSelect(e, 'motivo');
+
+                // Menú múltiple de Antecedentes
+                this.dom.patientForm.antecedentesTrigger.onclick = () => this.toggleAntecedentesDropdown();
+                this.dom.patientForm.antecedentesAddNew.onclick = () => this.handleAddNewAntecedente();
+                document.addEventListener('click', (e) => {
+                    if (this.dom.patientForm.antecedentesTrigger && !this.dom.patientForm.antecedentesTrigger.contains(e.target) && this.dom.patientForm.antecedentesDropdown && !this.dom.patientForm.antecedentesDropdown.contains(e.target)) {
+                        this.dom.patientForm.antecedentesDropdown.classList.add('hidden');
+                    }
+                });
+
+                // Acciones
+                document.getElementById('btn-delete-patient').onclick = () => this.handleDeletePatient();
+                document.getElementById('btn-delete-consult').onclick = () => this.handleDeleteConsult();
+                document.getElementById('btn-resolve-pendientes').onclick = () => this.resolvePendientes();
+                document.getElementById('btn-export-csv').onclick = () => this.exportToCSV();
+                document.getElementById('btn-delete-all-data').onclick = () => this.handleDeleteAllData();
+                
+                // Modales
+                this.dom.modals.confirmCancel.onclick = () => this.hideModal('confirm');
+                this.dom.modals.promptCancel.onclick = () => this.hideModal('prompt');
+                this.dom.modals.promptForm.onsubmit = (e) => e.preventDefault(); 
+            },
+
+            /**
+             * Inicializa Firebase y la autenticación
+             */
+            initFirebase() {
+                try {
+                    // CONFIGURACIÓN DE FIREBASE (PEGADA POR EL USUARIO)
+                    const firebaseConfig = {
+                      apiKey: "AIzaSyD7qqOK2Rqj9-PFpPgYuSM-xQXc8GBCNi0",
+                      authDomain: "consultoriopediatria-961aa.firebaseapp.com",
+                      projectId: "consultoriopediatria-961aa",
+                      storageBucket: "consultoriopediatria-961aa.firebasestorage.app",
+                      messagingSenderId: "573582470827",
+                      appId: "1:573582470827:web:50553186ad07b125a111ee",
+                      measurementId: "G-FGEK8CB3ZY"
+                    };
+
+                    this.app = initializeApp(firebaseConfig);
+                    this.auth = getAuth(this.app);
+                    this.db = getFirestore(this.app);
+                    
+                    // --- CAMBIO IMPORTANTE: Persistencia de sesión ---
+                    // Esto mantiene al usuario logueado incluso si cierra el navegador.
+                    setPersistence(this.auth, browserLocalPersistence)
+                        .then(() => {
+                            // Ahora que la persistencia está configurada, iniciamos el listener
+                            this.setupAuthListener();
+                        })
+                        .catch((error) => {
+                            console.error("Error al setear persistencia:", error);
+                            this.setupAuthListener(); // Continuar de todos modos
+                        });
+                    
+                } catch (e) {
+                    console.error("Error al inicializar Firebase:", e);
+                    this.navigate('login');
+                    this.dom.loginForm.error.innerText = "Error de Configuración de Firebase.";
+                    this.dom.loginForm.error.style.display = 'block';
+                }
+            },
+            
+            /**
+             * Configura el listener de autenticación
+             */
+            setupAuthListener() {
+                onAuthStateChanged(this.auth, (user) => {
+                    if (user) {
+                        // --- Usuario Logueado ---
+                        this.userId = user.uid;
+                        this.dom.adminUserEmail.innerText = user.email || user.uid;
+                        console.log("Usuario autenticado:", this.userId);
+                        
+                        // Mostrar carga mientras se conect a la DB
+                        this.navigate('loading'); 
+                        
+                        // Conectar a la base de datos PRIVADA del usuario
+                        this.setupFirestoreListener(); 
+                        
+                    } else {
+                        // --- Usuario No Logueado ---
+                        this.userId = null;
+                        this.dom.adminUserEmail.innerText = "No autenticado";
+                        console.log("Usuario no autenticado.");
+                        
+                        // Desconectar listener de DB anterior
+                        if (this.dbUnsubscribe) {
+                            this.dbUnsubscribe();
+                            this.dbUnsubscribe = null;
+                        }
+                        
+                        // Limpiar datos locales
+                        this.data.patients = {};
+                        this.data.consults = {};
+                        
+                        // Mostrar página de login
+                        this.navigate('login');
+                        this.showLoginLoading(false); // Asegurarse de que el spinner de login esté apagado
+                    }
+                });
+            },
+            
+            /**
+             * Maneja el envío del formulario de login
+             */
+            handleLogin(e) {
+                e.preventDefault();
+                const email = this.dom.loginForm.email.value;
+                const password = this.dom.loginForm.password.value;
+                
+                this.showLoginLoading(true);
+                this.dom.loginForm.error.style.display = 'none';
+
+                signInWithEmailAndPassword(this.auth, email, password)
+                    .then((userCredential) => {
+                        // El listener onAuthStateChanged se encargará del resto
+                        console.log("Login exitoso:", userCredential.user.uid);
+                    })
+                    .catch((error) => {
+                        console.error("Error de Login:", error.code, error.message);
+                        this.showLoginLoading(false);
+                        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+                            this.dom.loginForm.error.innerText = "Email o contraseña incorrectos.";
+                        } else {
+                            this.dom.loginForm.error.innerText = "Error al iniciar sesión. Verificá tu conexión.";
+                        }
+                        this.dom.loginForm.error.style.display = 'block';
+                    });
+            },
+            
+            /**
+             * Maneja el clic en "Cerrar Sesión"
+             */
+            handleLogout() {
+                this.showModal(
+                    'confirm',
+                    'Cerrar Sesión',
+                    '¿Estás seguro de que querés cerrar sesión?',
+                    () => {
+                        signOut(this.auth).catch((error) => {
+                            console.error("Error al cerrar sesión:", error);
+                        });
+                        this.hideModal('confirm');
+                        // El listener onAuthStateChanged se encargará de navegar a la página de login
+                    },
+                    'Cancelar',
+                    'Cerrar Sesión'
+                );
+            },
+            
+            /**
+             * Muestra/oculta el spinner del botón de login
+             */
+            showLoginLoading(isLoading) {
+                 if (isLoading) {
+                    this.dom.loginForm.submitText.style.display = 'none';
+                    this.dom.loginForm.submitSpinner.style.display = 'block';
+                    this.dom.loginForm.submitButton.disabled = true;
+                 } else {
+                    this.dom.loginForm.submitText.style.display = 'block';
+                    this.dom.loginForm.submitSpinner.style.display = 'none';
+                    this.dom.loginForm.submitButton.disabled = false;
+                 }
+            },
+            
+            /**
+             * Configura el listener de Firestore para sincronizar datos
+             */
+            setupFirestoreListener() {
+                if (this.dbUnsubscribe) this.dbUnsubscribe();
+                if (!this.userId) return; // No seguir si no hay ID de usuario
+
+                // --- CAMBIO IMPORTANTE: Ruta a la base de datos PRIVADA ---
+                const dbPath = `artifacts/${this.appId}/users/${this.userId}/pediatria/mainDB`;
+                this.dbRef = doc(this.db, dbPath);
+                
+                console.log("Escuchando cambios en Firestore (privado):", dbPath);
+
+                this.dbUnsubscribe = onSnapshot(this.dbRef, (doc) => {
+                    if (doc.exists()) {
+                        console.log("Datos privados recibidos de Firestore.");
+                        const remoteData = doc.data();
+                        
+                        this.data.patients = remoteData.patients || {};
+                        this.data.consults = remoteData.consults || {};
+                        
+                        this.data.options = {
+                            cobertura: remoteData.options?.cobertura || this.data.options.cobertura,
+                            lugar: remoteData.options?.lugar || this.data.options.lugar,
+                            antecedentes: remoteData.options?.antecedentes || this.data.options.antecedentes,
+                            motivo: remoteData.options?.motivo || this.data.options.motivo,
+                        };
+                        
+                    } else {
+                        console.log("No existe el documento privado, se creará uno nuevo al guardar.");
+                        // Resetear datos por si acaso
+                        this.data.patients = {};
+                        this.data.consults = {};
+                    }
+                    
+                    this.updateConnectionStatus(true);
+                    this.renderPatientList();
+                    
+                    if (this.currentPatientId && this.dom.pages.detail.classList.contains('active')) {
+                        if (this.data.patients[this.currentPatientId]) {
+                            this.renderPatientDetail(this.currentPatientId);
+                        } else {
+                            this.currentPatientId = null;
+                            this.navigate('list');
+                        }
+                    }
+                    
+                    if (this.dom.pages.loading.classList.contains('active')) {
+                        this.navigate('list');
+                    }
+                    
+                }, (error) => {
+                    console.error("Error al escuchar datos de Firestore:", error);
+                    this.updateConnectionStatus(false, "Error: " + error.message);
+                    
+                    if (error.code === 'permission-denied') {
+                        this.showModal(
+                            'confirm',
+                            'Error de Permisos',
+                            'No se pudo conectar a tu base de datos. Asegúrate de haber configurado las "Reglas" de seguridad en Firebase para la ruta de usuario.',
+                            null, 
+                            'Cerrar'
+                        );
+                        this.handleLogout(); // Forzar logout si hay error de permisos
+                    }
+                });
+            },
+            
+            /**
+             * Guarda el estado completo de la app en Firestore
+             */
+            async saveDB() {
+                // No guardar si no hay dbRef (p.ej. antes del login)
+                if (!this.dbRef) {
+                    console.error("No hay referencia a la base de datos para guardar. (Probablemente no logueado)");
+                    return;
+                }
+                
+                console.log("Guardando datos en Firestore (privado)...");
+                this.updateConnectionStatus(false, "Guardando..."); 
+                
+                try {
+                    // Usamos setDoc (sin merge) para sobreescribir todo el documento
+                    // Esto asegura que si borramos un paciente, se borre de la DB
+                    await setDoc(this.dbRef, this.data);
+                    console.log("Datos guardados exitosamente.");
+                    // El listener onSnapshot actualizará el estado a "Conectado"
+                } catch (error) {
+                    console.error("Error al guardar datos en Firestore:", error);
+                    this.updateConnectionStatus(false, "Error al guardar");
+                }
+            },
+            
+            /**
+             * Actualiza el indicador visual de conexión
+             */
+            updateConnectionStatus(isConnected, text = null) {
+                if (!this.dom.connectionIcon || !this.dom.connectionText) return;
+                
+                if (isConnected) {
+                    this.dom.connectionText.innerText = text || "Conectado y Sincronizado";
+                    this.dom.connectionIcon.classList.remove('bg-gray-400', 'bg-red-500', 'bg-yellow-500');
+                    this.dom.connectionIcon.classList.add('bg-green-500');
+                } else {
+                    this.dom.connectionText.innerText = text || "Desconectado";
+                    this.dom.connectionIcon.classList.remove('bg-green-500');
+                    this.dom.connectionIcon.classList.add(text && text.includes("Error") ? 'bg-red-500' : 'bg-yellow-500');
+                }
+            },
+
+            /**
+             * Navega entre las diferentes páginas de la app
+             */
+            navigate(pageId) {
+                Object.values(this.dom.pages).forEach(page => {
+                    if (page) page.classList.remove('active');
+                });
+                
+                const targetPage = this.dom.pages[pageId];
+                
+                if (targetPage) {
+                    targetPage.classList.add('active');
+                    console.log(`Navegando a: page-${pageId}`);
+                } else {
+                    console.error(`Página no encontrada: ${pageId}`);
+                    // Fallback a login o lista dependiendo del estado
+                    const fallback = this.userId ? 'list' : 'login';
+                    if (this.dom.pages[fallback]) this.dom.pages[fallback].classList.add('active');
+                }
+            },
+            
+            // ----------------------------------------------------------------
+            // LÓGICA DE PACIENTES (Sin cambios)
+            // ----------------------------------------------------------------
+
+            renderPatientList() {
+                if (!this.dom.patientList) return;
+                
+                this.dom.patientList.innerHTML = '';
+                const searchTerm = this.dom.searchBar.value.toLowerCase();
+                
+                const patientsArray = Object.values(this.data.patients)
+                    .sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+                let visiblePatients = 0;
+                
+                for (const patient of patientsArray) {
+                    if (patient.nombre.toLowerCase().includes(searchTerm) || 
+                        (patient.madre && patient.madre.toLowerCase().includes(searchTerm))) {
+                        
+                        visiblePatients++;
+                        const li = document.createElement('li');
+                        li.className = 'py-4 px-2 flex justify-between items-center cursor-pointer hover:bg-gray-50 rounded-lg';
+                        li.onclick = () => {
+                            this.renderPatientDetail(patient.id);
+                            this.navigate('detail');
+                        };
+                        
+                        li.innerHTML = `
+                            <div>
+                                <p class="text-lg font-semibold text-teal-800">${patient.nombre}</p>
+                                <p class="text-sm text-gray-600">Madre: ${patient.madre || '-'}</p>
+                            </div>
+                            <div class="text-right">
+                                <p class="text-sm text-gray-500">${this.calculateAge(patient.dob).display}</p>
+                                <svg class="w-5 h-5 text-gray-400 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+                            </div>
+                        `;
+                        this.dom.patientList.appendChild(li);
+                    }
+                }
+                
+                this.dom.noPatients.style.display = (visiblePatients === 0) ? 'block' : 'none';
+            },
+
+            showPatientForm(patientId = null) {
+                this.currentPatientId = patientId;
+                const form = this.dom.patientForm;
+                
+                this.renderSelectOptions(form.cobertura, this.data.options.cobertura, "add_new_cobertura", "");
+                this.renderSelectOptions(form.lugar, this.data.options.lugar, "add_new_lugar", "");
+                this.renderCustomMultiSelect(this.data.options.antecedentes, []);
+                
+                if (patientId) {
+                    const patient = this.data.patients[patientId];
+                    if (!patient) return this.navigate('list');
+                    
+                    form.title.innerText = "Editar Paciente";
+                    form.id.value = patient.id;
+                    form.nombre.value = patient.nombre;
+                    form.madre.value = patient.madre;
+                    form.telefono.value = patient.telefono;
+                    form.dob.value = patient.dob;
+                    form.birthWeight.value = patient.birthWeight;
+                    form.gestationalAge.value = patient.gestationalAge;
+                    form.notas.value = patient.notas;
+                    form.deleteButton.style.display = 'block';
+                    
+                    this.setSelectValue(form.cobertura, patient.cobertura);
+                    this.setSelectValue(form.lugar, patient.lugar);
+                    this.renderCustomMultiSelect(this.data.options.antecedentes, patient.antecedentes || []);
+                    
+                } else {
+                    form.title.innerText = "Nuevo Paciente";
+                    form.form.reset();
+                    form.id.value = '';
+                    form.deleteButton.style.display = 'none';
+                    this.renderCustomMultiSelect(this.data.options.antecedentes, []);
+                }
+                
+                this.navigate('patientForm');
+            },
+
+            handleSavePatient(e) {
+                e.preventDefault();
+                const form = this.dom.patientForm;
+                const id = form.id.value || `p_${new Date().getTime()}`;
+                
+                const selectedAntecedentes = [];
+                form.antecedentesOptions.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
+                    selectedAntecedentes.push(cb.value);
+                });
+
+                const patient = {
+                    id: id,
+                    nombre: form.nombre.value.trim(),
+                    madre: form.madre.value.trim(),
+                    telefono: form.telefono.value.trim(),
+                    dob: form.dob.value,
+                    birthWeight: form.birthWeight.value,
+                    gestationalAge: form.gestationalAge.value,
+                    cobertura: form.cobertura.value,
+                    lugar: form.lugar.value,
+                    antecedentes: selectedAntecedentes,
+                    notas: form.notas.value.trim(),
+                    pendientes: this.data.patients[id]?.pendientes || "",
+                    nextAppointment: this.data.patients[id]?.nextAppointment || ""
+                };
+                
+                if (!patient.nombre || !patient.dob) {
+                    this.showModal('confirm', 'Campos requeridos', 'Por favor, completa el Nombre y la Fecha de Nacimiento.', null, 'Entendido');
+                    return;
+                }
+
+                this.data.patients[id] = patient;
+                this.saveDB();
+                
+                this.currentPatientId = id; 
+                this.renderPatientDetail(id);
+                this.navigate('detail');
+            },
+
+            renderPatientDetail(patientId) {
+                this.currentPatientId = patientId;
+                const patient = this.data.patients[patientId];
+                
+                if (!patient) return this.navigate('list');
+                
+                document.getElementById('detail-patient-name').innerText = patient.nombre;
+                
+                const age = this.calculateAge(patient.dob);
+                document.getElementById('detail-patient-age').innerText = age.display;
+                document.getElementById('detail-patient-dob').innerText = this.formatDate(patient.dob);
+                document.getElementById('detail-patient-birthWeight').innerText = patient.birthWeight ? `${patient.birthWeight} grs` : '-';
+                document.getElementById('detail-patient-gestationalAge').innerText = patient.gestationalAge ? `${patient.gestationalAge} sem` : '-';
+                
+                document.getElementById('detail-patient-motherName').innerText = patient.madre || '-';
+                
+                // Hacer el teléfono clickeable
+                if (patient.telefono) {
+                    this.dom.detailMotherPhone.innerText = patient.telefono;
+                    this.dom.detailMotherPhone.href = `tel:${patient.telefono}`;
+                } else {
+                    this.dom.detailMotherPhone.innerText = '-';
+                    this.dom.detailMotherPhone.href = '#';
+                }
+                
+                document.getElementById('detail-patient-coverage').innerText = patient.cobertura || '-';
+                document.getElementById('detail-patient-location').innerText = patient.lugar || '-';
+                
+                const antecedentesContainer = document.getElementById('detail-patient-antecedentes');
+                antecedentesContainer.innerHTML = '';
+                if (patient.antecedentes && patient.antecedentes.length > 0) {
+                    patient.antecedentes.forEach(ant => {
+                        const tag = document.createElement('span');
+                        tag.className = 'bg-teal-100 text-teal-800 text-sm font-medium px-2.5 py-0.5 rounded-full';
+                        tag.innerText = ant;
+                        antecedentesContainer.appendChild(tag);
+                    });
+                } else {
+                    antecedentesContainer.innerText = '-';
+                }
+                
+                document.getElementById('detail-patient-notes').innerText = patient.notas || '-';
+                
+                const pendientesContainer = document.getElementById('detail-pendientes-container');
+                const pendientesText = document.getElementById('detail-patient-pendientes');
+                
+                if (patient.pendientes) {
+                    pendientesText.innerText = patient.pendientes;
+                    pendientesContainer.style.display = 'block';
+                } else {
+                    pendientesContainer.style.display = 'none';
+                }
+
+                const nextAppointmentText = document.getElementById('detail-patient-nextAppointment');
+                if (patient.nextAppointment) {
+                    nextAppointmentText.innerText = this.formatDate(patient.nextAppointment);
+                    nextAppointmentText.parentElement.style.display = 'block';
+                } else {
+                    nextAppointmentText.innerText = 'No programada';
+                    nextAppointmentText.parentElement.style.display = 'none';
+                }
+                
+                this.renderConsultHistory(patientId);
+            },
+            
+            renderConsultHistory(patientId) {
+                const container = document.getElementById('consult-history-list');
+                container.innerHTML = '';
+                
+                const patientConsults = this.data.consults[patientId] || {};
+                
+                if (Object.keys(patientConsults).length === 0) {
+                    container.innerHTML = '<p class="text-gray-500 text-center">No hay consultas registradas.</p>';
+                    return;
+                }
+                
+                const consultsArray = Object.values(patientConsults)
+                    .sort((a, b) => b.date.localeCompare(a.date));
+                    
+                consultsArray.forEach(consult => {
+                    const div = document.createElement('div');
+                    div.className = 'bg-white p-4 rounded-lg shadow border border-gray-200 cursor-pointer hover:border-teal-500';
+                    div.onclick = () => this.showConsultForm(patientId, consult.id);
+                    
+                    div.innerHTML = `
+                        <div class="flex justify-between items-center">
+                            <p class="text-lg font-semibold text-teal-700">${this.formatDate(consult.date)}</p>
+                            <p class="text-sm font-medium text-gray-600">${consult.motivo}</p>
+                        </div>
+                        <p class="text-gray-700 mt-2 whitespace-pre-wrap">${consult.notas || 'Sin notas.'}</p>
+                        ${consult.pendientes ? `
+                            <div class="mt-2 p-2 bg-yellow-50 border-t border-yellow-200 rounded-b-md">
+                                <p class="text-sm font-medium text-yellow-800">Pendiente: ${consult.pendientes}</p>
+                            </div>
+                        ` : ''}
+                    `;
+                    container.appendChild(div);
+                });
+            },
+            
+            handleDeletePatient() {
+                const patientId = this.currentPatientId;
+                if (!patientId) return;
+                
+                const patient = this.data.patients[patientId];
+                
+                this.showModal(
+                    'confirm',
+                    'Borrar Paciente',
+                    `¿Estás seguro de que querés borrar a ${patient.nombre}? Se borrarán también todas sus consultas. Esta acción no se puede deshacer.`,
+                    () => {
+                        delete this.data.patients[patientId];
+                        delete this.data.consults[patientId]; 
+                        this.saveDB();
+                        
+                        this.currentPatientId = null;
+                        this.navigate('list');
+                        this.hideModal('confirm');
+                    },
+                    'Cancelar',
+                    'Borrar Paciente'
+                );
+            },
+
+            // ----------------------------------------------------------------
+            // LÓGICA DE CONSULTAS (Sin cambios)
+            // ----------------------------------------------------------------
+
+            showConsultForm(patientId, consultId = null) {
+                this.currentPatientId = patientId; 
+                this.currentConsultId = consultId;
+                
+                const form = this.dom.consultForm;
+                form.form.reset(); 
+                
+                this.renderSelectOptions(form.motivo, this.data.options.motivo, "add_new_motivo", "");
+                
+                if (consultId) {
+                    const consult = this.data.consults[patientId]?.[consultId];
+                    if (!consult) return this.navigate('detail');
+                    
+                    form.title.innerText = "Editar Consulta";
+                    form.id.value = consult.id;
+                    form.patientId.value = consult.patientId;
+                    form.date.value = consult.date;
+                    this.setSelectValue(form.motivo, consult.motivo);
+                    form.peso.value = consult.peso;
+                    form.talla.value = consult.talla;
+                    form.pc.value = consult.pc;
+                    this.setRadioValue(form.vacunas, consult.vacunas);
+                    form.notas.value = consult.notas;
+                    form.pendientes.value = consult.pendientes;
+                    form.next.value = consult.nextAppointment;
+                    form.deleteButton.style.display = 'block';
+
+                } else {
+                    form.title.innerText = "Nueva Consulta";
+                    form.id.value = '';
+                    form.patientId.value = patientId;
+                    form.date.value = new Date().toISOString().split('T')[0]; 
+                    form.deleteButton.style.display = 'none';
+                    
+                    const patient = this.data.patients[patientId];
+                    if (patient && patient.pendientes) {
+                        form.pendientes.value = patient.pendientes;
+                    }
+                }
+                
+                this.navigate('consultForm');
+            },
+            
+            handleSaveConsult(e) {
+                e.preventDefault();
+                const form = this.dom.consultForm;
+                const patientId = form.patientId.value;
+                const consultId = form.id.value || `c_${new Date().getTime()}`;
+                
+                if (!patientId) return this.navigate('list');
+
+                const consult = {
+                    id: consultId,
+                    patientId: patientId,
+                    date: form.date.value,
+                    motivo: form.motivo.value,
+                    peso: form.peso.value,
+                    talla: form.talla.value,
+                    pc: form.pc.value,
+                    vacunas: this.getRadioValue(form.vacunas),
+                    notas: form.notas.value.trim(),
+                    pendientes: form.pendientes.value.trim(),
+                    nextAppointment: form.next.value
+                };
+                
+                if (!consult.date) {
+                    this.showModal('confirm', 'Campo requerido', 'Por favor, completa la Fecha de la Consulta.', null, 'Entendido');
+                    return;
+                }
+
+                if (!this.data.consults[patientId]) {
+                    this.data.consults[patientId] = {};
+                }
+                
+                this.data.consults[patientId][consultId] = consult;
+                
+                const patient = this.data.patients[patientId];
+                if (patient) {
+                    patient.pendientes = consult.pendientes;
+                    
+                    if (consult.nextAppointment) {
+                        patient.nextAppointment = consult.nextAppointment;
+                    }
+                }
+                
+                this.saveDB();
+                
+                this.renderPatientDetail(patientId);
+                this.navigate('detail');
+            },
+            
+            handleDeleteConsult() {
+                const patientId = this.currentPatientId;
+                const consultId = this.currentConsultId;
+                if (!patientId || !consultId) return;
+
+                this.showModal(
+                    'confirm',
+                    'Borrar Consulta',
+                    `¿Estás seguro de que querés borrar esta consulta del ${this.formatDate(this.dom.consultForm.date.value)}? Esta acción no se puede deshacer.`,
+                    () => {
+                        delete this.data.consults[patientId][consultId];
+                        this.saveDB();
+                        
+                        this.currentConsultId = null;
+                        this.renderPatientDetail(patientId);
+                        this.navigate('detail');
+                        this.hideModal('confirm');
+                    },
+                    'Cancelar',
+                    'Borrar Consulta'
+                );
+            },
+            
+            resolvePendientes() {
+                const patientId = this.currentPatientId;
+                if (!patientId) return;
+                
+                const patient = this.data.patients[patientId];
+                if (!patient || !patient.pendientes) return;
+
+                this.showModal(
+                    'confirm',
+                    'Resolver Pendientes',
+                    '¿Estás seguro de que querés marcar todos los pendientes como resueltos? Se borrarán de la ficha.',
+                    () => {
+                        patient.pendientes = ""; 
+                        this.saveDB();
+                        
+                        this.renderPatientDetail(patientId);
+                        this.hideModal('confirm');
+                    },
+                    'Cancelar',
+                    'Resolver'
+                );
+            },
+            
+            // ----------------------------------------------------------------
+            // LÓGICA DE FORMULARIOS (helpers) (Sin cambios)
+            // ----------------------------------------------------------------
+
+            renderSelectOptions(selectElement, optionsArray, addValue, selectedValue) {
+                if (!selectElement) return;
+                selectElement.innerHTML = ''; 
+                
+                const ph = document.createElement('option');
+                ph.value = "";
+                ph.innerText = "Seleccionar...";
+                ph.disabled = true;
+                ph.selected = !selectedValue;
+                selectElement.appendChild(ph);
+                
+                optionsArray.forEach(option => {
+                    const opt = document.createElement('option');
+                    opt.value = option;
+                    opt.innerText = option;
+                    if (option === selectedValue) opt.selected = true;
+                    selectElement.appendChild(opt);
+                });
+                
+                if (addValue) {
+                    const addOpt = document.createElement('option');
+                    addOpt.value = addValue;
+                    addOpt.innerText = "+ Agregar nueva...";
+                    addOpt.className = "font-medium text-blue-600";
+                    selectElement.appendChild(addOpt);
+                }
+            },
+            
+            setSelectValue(selectElement, value) {
+                if (!selectElement) return;
+                let optionExists = false;
+                for (let i = 0; i < selectElement.options.length; i++) {
+                    if (selectElement.options[i].value === value) {
+                        optionExists = true;
+                        break;
+                    }
+                }
+                if (value && !optionExists) {
+                    const newOpt = document.createElement('option');
+                    newOpt.value = value;
+                    newOpt.innerText = value;
+                    const lastOption = selectElement.options[selectElement.options.length - 1];
+                    selectElement.insertBefore(newOpt, lastOption);
+                }
+                selectElement.value = value;
+            },
+
+            handleCustomSelect(event, optionKey) {
+                const select = event.target;
+                if (select.value === `add_new_${optionKey}`) {
+                    const addValue = `add_new_${optionKey}`;
+                    
+                    this.showPrompt(
+                        `Nueva Opción`,
+                        `Introduce el nuevo valor para "${optionKey}":`,
+                        (newValue) => {
+                            if (newValue && !this.data.options[optionKey].includes(newValue)) {
+                                this.data.options[optionKey].push(newValue);
+                                const newOpt = document.createElement('option');
+                                newOpt.value = newValue;
+                                newOpt.innerText = newValue;
+                                select.insertBefore(newOpt, select.querySelector(`option[value="${addValue}"]`));
+                                select.value = newValue; 
+                                this.saveDB(); 
+                            } else {
+                                select.value = ""; 
+                            }
+                            this.hideModal('prompt');
+                        },
+                        () => {
+                            select.value = ""; 
+                            this.hideModal('prompt');
+                        }
+                    );
+                }
+            },
+            
+            renderCustomMultiSelect(optionsArray, selectedValues) {
+                const container = this.dom.patientForm.antecedentesOptions;
+                if (!container) return;
+                container.innerHTML = ''; 
+                
+                optionsArray.forEach(option => {
+                    const isChecked = selectedValues.includes(option);
+                    const div = document.createElement('div');
+                    div.className = 'multi-select-option';
+                    div.innerHTML = `
+                        <label>
+                            <input type="checkbox" value="${option}" ${isChecked ? 'checked' : ''} class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300 rounded">
+                            <span>${option}</span>
+                        </label>
+                    `;
+                    container.appendChild(div);
+                });
+                
+                this.updateAntecedentesTriggerText();
+                
+                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+                    cb.onchange = () => this.updateAntecedentesTriggerText();
+                });
+            },
+            
+            toggleAntecedentesDropdown() {
+                this.dom.patientForm.antecedentesDropdown.classList.toggle('hidden');
+            },
+
+            updateAntecedentesTriggerText() {
+                const checked = this.dom.patientForm.antecedentesOptions.querySelectorAll('input[type="checkbox"]:checked');
+                const triggerSpan = this.dom.patientForm.antecedentesTrigger.querySelector('span');
+                
+                if (checked.length === 0) {
+                    triggerSpan.innerText = 'Seleccionar...';
+                } else if (checked.length <= 2) {
+                    triggerSpan.innerText = Array.from(checked).map(cb => cb.value).join(', ');
+                } else {
+                    triggerSpan.innerText = `${checked.length} seleccionados`;
+                }
+            },
+            
+            handleAddNewAntecedente() {
+                this.showPrompt(
+                    'Nuevo Antecedente',
+                    'Introduce el nuevo antecedente:',
+                    (newValue) => {
+                        if (newValue && !this.data.options.antecedentes.includes(newValue)) {
+                            this.data.options.antecedentes.push(newValue);
+                            this.saveDB();
+                            
+                            const div = document.createElement('div');
+                            div.className = 'multi-select-option';
+                            div.innerHTML = `
+                                <label>
+                                    <input type="checkbox" value="${newValue}" checked class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300 rounded">
+                                    <span>${newValue}</span>
+                                </label>
+                            `;
+                            div.querySelector('input[type="checkbox"]').onchange = () => this.updateAntecedentesTriggerText();
+                            this.dom.patientForm.antecedentesOptions.appendChild(div);
+                            this.updateAntecedentesTriggerText();
+                        }
+                        this.hideModal('prompt');
+                    },
+                    () => this.hideModal('prompt')
+                );
+            },
+            
+            getRadioValue(radioElements) {
+                for (const radio of radioElements) {
+                    if (radio.checked) return radio.value;
+                }
+                return "";
+            },
+
+            setRadioValue(radioElements, value) {
+                for (const radio of radioElements) {
+                    radio.checked = (radio.value === value);
+                }
+            },
+            
+            // ----------------------------------------------------------------
+            // LÓGICA DE MODALES (Sin cambios)
+            // ----------------------------------------------------------------
+
+            showModal(type, title, body, okCallback, cancelText, okText) {
+                const modal = this.dom.modals[type];
+                if (!modal) return;
+                
+                const titleEl = this.dom.modals[`${type}Title`];
+                const bodyEl = this.dom.modals[`${type}Body`]; 
+                const okEl = this.dom.modals[`${type}Ok`];
+                const cancelEl = this.dom.modals[`${type}Cancel`];
+
+                if (titleEl) titleEl.innerText = title;
+                if (bodyEl) bodyEl.innerText = body;
+                if (okText) okEl.innerText = okText;
+                if (cancelText) cancelEl.innerText = cancelText;
+
+                if (okCallback) {
+                    okEl.style.display = 'inline-flex';
+                    okEl.onclick = okCallback;
+                } else {
+                    okEl.style.display = 'none';
+                }
+                
+                if (type === 'confirm') {
+                    const okBtn = this.dom.modals.confirmOk;
+                    const originalClasses = okBtn.getAttribute('class_original') || 'bg-red-600 text-white hover:bg-red-700';
+                    okBtn.className = `py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${originalClasses}`; // Reset
+                    
+                    if (okText === 'Resolver') { 
+                        okBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
+                        okBtn.classList.add('bg-yellow-600', 'text-white', 'hover:bg-yellow-700', 'focus:ring-yellow-500');
+                    } else if (okText === 'Cerrar Sesión') {
+                        okBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
+                        okBtn.classList.add('bg-gray-700', 'text-white', 'hover:bg-gray-800', 'focus:ring-gray-500');
+                    }
+                }
+                modal.classList.remove('hidden');
+            },
+
+            showPrompt(title, label, okCallback, cancelCallback) {
+                const modal = this.dom.modals.prompt;
+                if (!modal) return;
+                
+                this.dom.modals.promptTitle.innerText = title;
+                this.dom.modals.promptLabel.innerText = label;
+                this.dom.modals.promptInput.value = '';
+                
+                this.dom.modals.promptForm.onsubmit = (e) => {
+                    e.preventDefault();
+                    okCallback(this.dom.modals.promptInput.value.trim());
+                };
+                this.dom.modals.promptCancel.onclick = () => {
+                    cancelCallback();
+                };
+                modal.classList.remove('hidden');
+                setTimeout(() => this.dom.modals.promptInput.focus(), 50); 
+            },
+
+            hideModal(type) {
+                const modal = this.dom.modals[type];
+                if (modal) modal.classList.add('hidden');
+                if (type === 'confirm') this.dom.modals.confirmOk.onclick = null;
+                if (type === 'prompt') {
+                    this.dom.modals.promptForm.onsubmit = null;
+                    this.dom.modals.promptCancel.onclick = null;
+                }
+            },
+            
+            // ----------------------------------------------------------------
+            // LÓGICA DE ADMINISTRACIÓN (Botón de borrar datos actualizado)
+            // ----------------------------------------------------------------
+
+            handleDeleteAllData() {
+                this.showModal(
+                    'confirm',
+                    '¡ACCIÓN IRREVERSIBLE!',
+                    '¿Estás absolutamente seguro de que querés borrar TODOS tus pacientes y consultas? Esta acción no se puede deshacer.',
+                    () => {
+                        this.data.patients = {};
+                        this.data.consults = {};
+                        this.data.options = { 
+                            cobertura: ["Particular", "IOMA", "Otras"],
+                            lugar: ["Caseros", "Alsina", "Hospital"],
+                            antecedentes: ["Prematurez", "Bajo peso al nacer", "Ictericia", "Bronquiolitis", "Neumonia"],
+                            motivo: ["Control de salud", "Control pre escolar", "Patología aguda", "Otras"]
+                        };
+                        this.saveDB(); 
+                        this.hideModal('confirm');
+                        this.showModal('confirm', 'Datos Borrados', 'Todos tus datos han sido eliminados.', null, 'Entendido');
+                    },
+                    'Cancelar',
+                    'BORRAR TODO'
+                );
+            },
+            
+            exportToCSV() {
+                console.log("Exportando a CSV...");
+                let csvContent = "data:text/csv;charset=utf-8,";
+                
+                const headers = [
+                    "ID_Paciente", "Nombre", "Madre", "Telefono", "F_Nacimiento", "Edad_Actual",
+                    "Peso_Nacer_grs", "Edad_Gest_sem", "Cobertura", "Lugar_Atencion", "Antecedentes", "Notas_Generales",
+                    "ID_Consulta", "Fecha_Consulta", "Motivo_Consulta", "Peso_kg", "Talla_cm", "PC_cm",
+                    "Vacunas", "Notas_Consulta", "Pendientes_Consulta"
+                ];
+                csvContent += headers.join(",") + "\r\n";
+                
+                const escapeCSV = (str) => {
+                    if (str === null || str === undefined) return '""';
+                    let result = String(str);
+                    if (result.includes('"') || result.includes(',') || result.includes('\n')) {
+                        result = result.replace(/"/g, '""');
+                        result = `"${result}"`;
+                    }
+                    return result;
+                };
+
+                const patients = Object.values(this.data.patients).sort((a, b) => a.nombre.localeCompare(b.nombre));
+                
+                for (const patient of patients) {
+                    const patientConsults = this.data.consults[patient.id] || {};
+                    const consultsArray = Object.values(patientConsults).sort((a, b) => a.date.localeCompare(b.date));
+                    
+                    const patientRowBase = [
+                        patient.id,
+                        patient.nombre,
+                        patient.madre,
+                        patient.telefono,
+                        patient.dob,
+                        this.calculateAge(patient.dob).display,
+                        patient.birthWeight,
+                        patient.gestationalAge,
+                        patient.cobertura,
+                        patient.lugar,
+                        (patient.antecedentes || []).join('; '), 
+                        patient.notas
+                    ].map(escapeCSV);
+                    
+                    if (consultsArray.length > 0) {
+                        for (const consult of consultsArray) {
+                            const consultRow = [
+                                consult.id,
+                                consult.date,
+                                consult.motivo,
+                                consult.peso,
+                                consult.talla,
+                                consult.pc,
+                                consult.vacunas,
+                                consult.notas,
+                                consult.pendientes
+                            ].map(escapeCSV);
+                            
+                            csvContent += [...patientRowBase, ...consultRow].join(",") + "\r\n";
+                        }
+                    } else {
+                        csvContent += patientRowBase.join(",") + "\r\n";
+                    }
+                }
+                
+                const encodedUri = encodeURI(csvContent);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `export_pediatria_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            },
+
+            // ----------------------------------------------------------------
+            // UTILIDADES (Sin cambios)
+            // ----------------------------------------------------------------
+            
+            calculateAge(dobString) {
+                if (!dobString) return { display: '-', years: 0, months: 0, days: 0 };
+                try {
+                    const dob = new Date(dobString + 'T00:00:00'); 
+                    const today = new Date();
+                    let years = today.getFullYear() - dob.getFullYear();
+                    let months = today.getMonth() - dob.getMonth();
+                    let days = today.getDate() - dob.getDate();
+                    if (days < 0) {
+                        months--;
+                        const prevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+                        days += prevMonth.getDate();
+                    }
+                    if (months < 0) {
+                        years--;
+                        months += 12;
+                    }
+                    let display = "";
+                    if (years > 0) {
+                        display = `${years} año${years > 1 ? 's' : ''}`;
+                        if (months > 0) display += ` y ${months} mes${months > 1 ? 'es' : ''}`;
+                    } else if (months > 0) {
+                        display = `${months} mes${months > 1 ? 'es' : ''}`;
+                        if (days > 0) display += ` y ${days} día${days > 1 ? 's' : ''}`;
+                    } else {
+                        display = `${days} día${days > 1 ? 's' : ''}`;
+                    }
+                    return { display, years, months, days };
+                } catch (e) {
+                    return { display: 'Error', years: 0, months: 0, days: 0 };
+                }
+            },
+            
+            formatDate(dateString) {
+                if (!dateString) return 'No definida';
+                try {
+                    const [year, month, day] = dateString.split('-');
+                    if (!day || !month || !year) return dateString;
+                    return `${day}/${month}/${year}`;
+                } catch(e) {
+                    return dateString;
+                }
+            }
+        };
+
+        // Iniciar la aplicación
+        document.addEventListener('DOMContentLoaded', () => {
+            App.init();
+        });
+
+    </script>
+
+</body>
+</html>
