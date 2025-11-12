@@ -1,1850 +1,1057 @@
 <!DOCTYPE html>
-<html lang="es" class="h-full">
+<html lang="es">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seguimiento Pediátrico</title>
-    <!-- Carga de Tailwind CSS -->
+    <title>NeoManager - Hospital Carrillo</title>
+    <!-- 1. Cargar Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Carga de la fuente Inter -->
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- 2. Cargar Iconos (Heroicons) -->
+    <script type="module" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
+    <script nomodule src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
+    <!-- 3. Cargar Firebase (Módulos ES) -->
+    <script type="module">
+        // Importar las funciones necesarias de Firebase
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { 
+            getAuth, 
+            signInAnonymously, 
+            signInWithCustomToken, 
+            onAuthStateChanged 
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { 
+            getFirestore, 
+            doc, 
+            addDoc, 
+            setDoc, 
+            updateDoc, 
+            deleteDoc, 
+            onSnapshot, 
+            collection, 
+            query,
+            setLogLevel
+        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // --- VARIABLES GLOBALES ---
+        let app, auth, db, userId, appId;
+        let pacientesCollectionRef, customDiagnosticosCollectionRef;
+        
+        let allPacientes = []; // Caché local de todos los pacientes
+        let filteredPacientes = []; // Pacientes que coinciden con los filtros
+        let baseDiagnosticos = []; // La lista larga de diagnósticos
+        let customDiagnosticos = []; // Diagnósticos agregados por usuarios
+        let allDiagnosticos = []; // Lista combinada
+        
+        let selectedDiagnosticos = []; // Diagnósticos seleccionados en el modal
+        let editingPatientId = null; // ID del paciente que se está editando
+        let patientToDeleteId = null; // ID del paciente a borrar
+
+        // --- CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE!) ---
+        // Estas variables DEBEN ser reemplazadas por las de tu proyecto Firebase.
+        // Vienen del entorno de Canvas o puedes pegarlas aquí manualmente.
+       const firebaseConfig = {
+    apiKey: "AIzaSyApnwRZQklxTBLhwBBIoyAcCiBAgzyhtvE",
+    authDomain: "neomanager-a4482.firebaseapp.com",
+    projectId: "neomanager-a4482",
+    storageBucket: "neomanager-a4482.firebasestorage.app",
+    messagingSenderId: "574188152831",
+    appId: "1:574188152831:web:34ab797c5b709e7e3429ca"
+  };
+        appId = typeof __app_id !== 'undefined' ? __app_id : 'neo-manager-default';
+        
+        // --- INICIALIZACIÓN DE LA APP ---
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            // Inicializar Firebase
+            app = initializeApp(firebaseConfig);
+            db = getFirestore(app);
+            auth = getAuth(app);
+            setLogLevel('Debug'); // Mostrar logs detallados de Firestore
+
+            // Llenar la lista base de diagnósticos
+            populateBaseDiagnosticos();
+            
+            // Configurar listeners de la UI
+            setupUIListeners();
+            
+            // Iniciar autenticación
+            handleAuth();
+        });
+
+        // --- MANEJO DE AUTENTICACIÓN Y DATOS ---
+
+        function handleAuth() {
+            showLoading(true, "Autenticando...");
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    console.log("Usuario autenticado:", userId);
+                    document.getElementById('user-id-display').textContent = `ID de Usuario: ${userId}`;
+
+                    // Definir rutas de la base de datos (colaborativas)
+                    const publicDataPath = `artifacts/${appId}/public/data`;
+                    pacientesCollectionRef = collection(db, `${publicDataPath}/pacientes`);
+                    customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
+                    
+                    // Cargar datos
+                    loadCustomDiagnosticos(); // Cargar primero para que estén listos para los pacientes
+                    loadPacientes();
+                    
+                    showLoading(false);
+                    showView('ingreso-view'); // Empezar en la vista de ingreso
+                } else {
+                    // Si no hay usuario, intentar loguearse
+                    try {
+                        if (typeof __initial_auth_token !== 'undefined') {
+                            await signInWithCustomToken(auth, __initial_auth_token);
+                        } else {
+                            await signInAnonymously(auth);
+                        }
+                    } catch (error) {
+                        console.error("Error de autenticación:", error);
+                        showLoading(false);
+                        showToast("Error de autenticación. La app no funcionará.", 'error');
+                    }
+                }
+            });
+        }
+
+        /** Carga y escucha los diagnósticos customizados */
+        function loadCustomDiagnosticos() {
+            onSnapshot(query(customDiagnosticosCollectionRef), (snapshot) => {
+                customDiagnosticos = snapshot.docs.map(doc => doc.data().nombre).sort();
+                console.log("Diagnósticos customizados cargados:", customDiagnosticos.length);
+                updateAllDiagnosticosList();
+            }, (error) => {
+                console.error("Error al cargar diagnósticos custom:", error);
+                showToast("Error al cargar lista de diagnósticos.", 'error');
+            });
+        }
+
+        /** Carga y escucha los pacientes */
+        function loadPacientes() {
+            showLoading(true, "Cargando pacientes...");
+            onSnapshot(query(pacientesCollectionRef), (snapshot) => {
+                allPacientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                console.log("Pacientes cargados:", allPacientes.length);
+                // Aplicar filtros y renderizar la lista
+                applyFiltersAndRender();
+                showLoading(false);
+            }, (error) => {
+                console.error("Error al cargar pacientes:", error);
+                showToast("Error al cargar pacientes.", 'error');
+                showLoading(false);
+            });
+        }
+
+        // --- MANEJO DE LA UI (VISTAS, MODALES, ETC) ---
+
+        /** Configura todos los event listeners de la UI */
+        function setupUIListeners() {
+            // Pestañas
+            document.getElementById('tab-ingreso').addEventListener('click', () => showView('ingreso-view'));
+            document.getElementById('tab-consulta').addEventListener('click', () => showView('consulta-view'));
+            
+            // Botón "Nuevo Paciente" (en vista consulta)
+            document.getElementById('btn-nuevo-paciente').addEventListener('click', () => {
+                resetForm();
+                showView('ingreso-view');
+            });
+
+            // Formulario de Ingreso
+            document.getElementById('patient-form').addEventListener('submit', handleFormSubmit);
+            document.getElementById('btn-cancelar-edicion').addEventListener('click', (e) => {
+                e.preventDefault();
+                resetForm();
+                showView('consulta-view');
+            });
+
+            // Modal de Diagnósticos
+            document.getElementById('btn-open-diag-modal').addEventListener('click', () => showDiagnosticoModal(true));
+            document.getElementById('btn-close-diag-modal').addEventListener('click', () => showDiagnosticoModal(false));
+            document.getElementById('btn-save-diag-modal').addEventListener('click', saveDiagnosticosFromModal);
+            document.getElementById('diag-modal-search').addEventListener('input', renderDiagnosticoModalList);
+            document.getElementById('btn-add-new-diag').addEventListener('click', addNewDiagnostico);
+            
+            // Modal de Borrado
+            document.getElementById('btn-cancel-delete').addEventListener('click', () => showDeleteModal(false));
+            document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeletePatient);
+
+            // Filtros de Búsqueda (se activan al cambiar)
+            document.getElementById('search-general').addEventListener('input', applyFiltersAndRender);
+            document.getElementById('search-date-start').addEventListener('change', applyFiltersAndRender);
+            document.getElementById('search-date-end').addEventListener('change', applyFiltersAndRender);
+            document.getElementById('search-eg-start').addEventListener('input', applyFiltersAndRender);
+            document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
+            document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
+
+            // Botones de Exportación
+            document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(allPacientes, 'pacientes_neo_total'));
+            document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado'));
+            
+            // Clic en la lista de pacientes (para editar/borrar)
+            document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
+        }
+
+        /** Cambia entre la vista de 'Ingreso' y 'Consulta' */
+        function showView(viewId) {
+            const ingresoView = document.getElementById('ingreso-view');
+            const consultaView = document.getElementById('consulta-view');
+            const tabIngreso = document.getElementById('tab-ingreso');
+            const tabConsulta = document.getElementById('tab-consulta');
+
+            if (viewId === 'ingreso-view') {
+                ingresoView.classList.remove('hidden');
+                consultaView.classList.add('hidden');
+                tabIngreso.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+                tabIngreso.classList.remove('text-gray-500');
+                tabConsulta.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+                tabConsulta.classList.add('text-gray-500');
+            } else {
+                ingresoView.classList.add('hidden');
+                consultaView.classList.remove('hidden');
+                tabIngreso.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
+                tabIngreso.classList.add('text-gray-500');
+                tabConsulta.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
+                tabConsulta.classList.remove('text-gray-500');
+                applyFiltersAndRender(); // Asegurarse de que la lista esté actualizada
+            }
+        }
+
+        /** Muestra u oculta el overlay de carga */
+        function showLoading(show, message = "Cargando...") {
+            const overlay = document.getElementById('loading-overlay');
+            const messageEl = document.getElementById('loading-message');
+            if (show) {
+                messageEl.textContent = message;
+                overlay.classList.remove('hidden');
+            } else {
+                overlay.classList.add('hidden');
+            }
+        }
+        
+        /** Muestra un mensaje temporal (toast) */
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast-notification');
+            const toastMessage = document.getElementById('toast-message');
+            
+            toastMessage.textContent = message;
+            
+            // Quitar clases de color anteriores
+            toast.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500');
+            
+            if (type === 'success') {
+                toast.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                toast.classList.add('bg-red-500');
+            } else {
+                toast.classList.add('bg-yellow-500');
+            }
+            
+            toast.classList.remove('hidden', 'opacity-0');
+            
+            setTimeout(() => {
+                toast.classList.add('opacity-0');
+                setTimeout(() => toast.classList.add('hidden'), 500); // Esperar a que termine la transición
+            }, 3000);
+        }
+
+        /** Muestra u oculta el modal de diagnósticos */
+        function showDiagnosticoModal(show) {
+            const modal = document.getElementById('diagnostico-modal');
+            if (show) {
+                // Al abrir, renderizar la lista
+                renderDiagnosticoModalList();
+                modal.classList.remove('hidden');
+            } else {
+                // Al cerrar, limpiar el filtro
+                document.getElementById('diag-modal-search').value = '';
+                modal.classList.add('hidden');
+            }
+        }
+        
+        /** Muestra u oculta el modal de confirmación de borrado */
+        function showDeleteModal(show, patientName = '') {
+            const modal = document.getElementById('delete-modal');
+            if (show) {
+                document.getElementById('delete-patient-name').textContent = patientName;
+                modal.classList.remove('hidden');
+            } else {
+                modal.classList.add('hidden');
+                patientToDeleteId = null;
+            }
+        }
+
+        // --- LÓGICA DEL FORMULARIO DE INGRESO ---
+
+        /** Maneja el envío del formulario (Crear o Actualizar) */
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            showLoading(true, "Guardando...");
+
+            const form = e.target;
+            const patientData = {
+                nombre: form.nombre.value,
+                fechaNacimiento: form.fechaNacimiento.value,
+                peso: form.peso.valueAsNumber,
+                edadGestacional: form.edadGestacional.valueAsNumber,
+                procedencia: form.procedencia.value,
+                fechaInternacion: form.fechaInternacion.value,
+                fechaEgreso: form.fechaEgreso.value,
+                statusEgreso: form.statusEgreso.value,
+                diagnosticos: selectedDiagnosticos, // Guardar el array de diagnósticos
+                // Metadatos
+                lastUpdatedBy: userId,
+                lastUpdatedAt: new Date().toISOString()
+            };
+
+            try {
+                if (editingPatientId) {
+                    // Actualizar paciente existente
+                    const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, editingPatientId);
+                    await updateDoc(patientRef, patientData);
+                    showToast("Paciente actualizado con éxito", "success");
+                } else {
+                    // Crear nuevo paciente
+                    patientData.createdAt = new Date().toISOString();
+                    patientData.createdBy = userId;
+                    await addDoc(pacientesCollectionRef, patientData);
+                    showToast("Paciente ingresado con éxito", "success");
+                }
+                
+                resetForm();
+                showView('consulta-view'); // Volver a la consulta
+                
+            } catch (error) {
+                console.error("Error al guardar paciente:", error);
+                showToast("Error al guardar el paciente.", "error");
+            } finally {
+                showLoading(false);
+            }
+        }
+
+        /** Limpia el formulario y el estado de edición */
+        function resetForm() {
+            document.getElementById('patient-form').reset();
+            editingPatientId = null;
+            selectedDiagnosticos = [];
+            updateSelectedDiagnosticosDisplay();
+            document.getElementById('form-title').textContent = "Ingreso de Nuevo Paciente";
+            document.getElementById('btn-submit-form').textContent = "Guardar Paciente";
+            document.getElementById('btn-cancelar-edicion').classList.add('hidden');
+        }
+        
+        /** Carga los datos de un paciente en el formulario para editar */
+        function loadPatientForEdit(id) {
+            const patient = allPacientes.find(p => p.id === id);
+            if (!patient) return;
+
+            showLoading(true, "Cargando para editar...");
+
+            const form = document.getElementById('patient-form');
+            form.nombre.value = patient.nombre || '';
+            form.fechaNacimiento.value = patient.fechaNacimiento || '';
+            form.peso.value = patient.peso || null;
+            form.edadGestacional.value = patient.edadGestacional || null;
+            form.procedencia.value = patient.procedencia || '';
+            form.fechaInternacion.value = patient.fechaInternacion || '';
+            form.fechaEgreso.value = patient.fechaEgreso || '';
+            form.statusEgreso.value = patient.statusEgreso || '';
+
+            // Cargar diagnósticos
+            selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+            updateSelectedDiagnosticosDisplay();
+
+            // Actualizar UI del formulario
+            editingPatientId = patient.id;
+            document.getElementById('form-title').textContent = "Editando Paciente";
+            document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
+            document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
+
+            showLoading(false);
+            showView('ingreso-view'); // Cambiar a la vista de ingreso
+        }
+
+        /** Maneja el clic en los botones de la lista de pacientes */
+        function handlePatientListClick(e) {
+            const button = e.target.closest('button'); // Buscar el botón más cercano
+            if (!button) return;
+
+            const action = button.dataset.action;
+            const id = button.dataset.id;
+            const name = button.dataset.name;
+
+            if (action === 'edit') {
+                loadPatientForEdit(id);
+            } else if (action === 'delete') {
+                patientToDeleteId = id;
+                showDeleteModal(true, name);
+            }
+        }
+
+        /** Confirma y ejecuta el borrado del paciente */
+        async function confirmDeletePatient() {
+            if (!patientToDeleteId) return;
+            
+            showLoading(true, "Borrando paciente...");
+            try {
+                const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
+                await deleteDoc(patientRef);
+                showToast("Paciente borrado con éxito", "success");
+            } catch (error) {
+                console.error("Error al borrar paciente:", error);
+                showToast("Error al borrar el paciente.", "error");
+            } finally {
+                showDeleteModal(false);
+                showLoading(false);
+                // El onSnapshot actualizará la lista automáticamente
+            }
+        }
+
+        // --- LÓGICA DEL MODAL DE DIAGNÓSTICOS ---
+
+        /** Actualiza la lista combinada de diagnósticos y el select de filtro */
+        function updateAllDiagnosticosList() {
+            allDiagnosticos = [...baseDiagnosticos, ...customDiagnosticos].sort();
+            
+            // Actualizar el <select> de filtro en la vista de consulta
+            const selectPatologia = document.getElementById('search-patologia');
+            // Guardar valor actual para restaurarlo
+            const currentValue = selectPatologia.value; 
+            
+            selectPatologia.innerHTML = '<option value="">-- Todas las Patologías --</option>'; // Opción por defecto
+            
+            allDiagnosticos.forEach(diag => {
+                const option = document.createElement('option');
+                option.value = diag;
+                option.textContent = diag;
+                selectPatologia.appendChild(option);
+            });
+            
+            selectPatologia.value = currentValue; // Restaurar valor
+        }
+
+        /** Renderiza la lista de checkboxes en el modal de diagnósticos */
+        function renderDiagnosticoModalList() {
+            const listContainer = document.getElementById('diag-modal-list');
+            const filter = document.getElementById('diag-modal-search').value.toLowerCase();
+            
+            listContainer.innerHTML = ''; // Limpiar lista
+            
+            const diagnosToShow = allDiagnosticos.filter(d => d.toLowerCase().includes(filter));
+            
+            if (diagnosToShow.length === 0 && filter === '') {
+                listContainer.innerHTML = '<p class="text-gray-500">Cargando diagnósticos...</p>';
+                return;
+            }
+
+            if (diagnosToShow.length === 0 && filter !== '') {
+                listContainer.innerHTML = `<p class="text-gray-500">No se encontraron diagnósticos para "${filter}".</p>`;
+                return;
+            }
+
+            diagnosToShow.forEach(diag => {
+                const isChecked = selectedDiagnosticos.includes(diag);
+                const li = document.createElement('li');
+                li.classList.add('flex', 'items-center', 'p-2', 'hover:bg-gray-100', 'rounded-md');
+                li.innerHTML = `
+                    <label class="flex items-center w-full cursor-pointer">
+                        <input type="checkbox" 
+                               class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                               data-diag-name="${diag}" 
+                               ${isChecked ? 'checked' : ''}>
+                        <span class="ml-3 text-gray-700">${diag}</span>
+                    </label>
+                `;
+                
+                // Añadir listener al checkbox
+                li.querySelector('input').addEventListener('change', (e) => {
+                    const name = e.target.dataset.diagName;
+                    if (e.target.checked) {
+                        if (!selectedDiagnosticos.includes(name)) {
+                            selectedDiagnosticos.push(name);
+                        }
+                    } else {
+                        selectedDiagnosticos = selectedDiagnosticos.filter(d => d !== name);
+                    }
+                });
+                
+                listContainer.appendChild(li);
+            });
+        }
+        
+        /** Guarda los diagnósticos seleccionados del modal al formulario */
+        function saveDiagnosticosFromModal() {
+            // La variable global `selectedDiagnosticos` ya está actualizada por los listeners
+            updateSelectedDiagnosticosDisplay();
+            showDiagnosticoModal(false);
+        }
+        
+        /** Actualiza el display de diagnósticos seleccionados en el formulario */
+        function updateSelectedDiagnosticosDisplay() {
+            const container = document.getElementById('selected-diagnosticos-display');
+            if (selectedDiagnosticos.length === 0) {
+                container.innerHTML = '<p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>';
+            } else {
+                container.innerHTML = selectedDiagnosticos
+                    .map(d => `<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm font-medium mr-2 mb-2 px-2.5 py-0.5 rounded-full">${d}</span>`)
+                    .join('');
+            }
+        }
+
+        /** Agrega un nuevo diagnóstico customizado a Firestore */
+        async function addNewDiagnostico() {
+            const input = document.getElementById('diag-modal-new-diag');
+            const newDiagName = input.value.trim();
+            
+            if (!newDiagName) {
+                showToast("Escriba un nombre para el diagnóstico", "warn");
+                return;
+            }
+            
+            if (allDiagnosticos.some(d => d.toLowerCase() === newDiagName.toLowerCase())) {
+                showToast("Ese diagnóstico ya existe", "warn");
+                return;
+            }
+            
+            // Guardar en Firestore
+            try {
+                await addDoc(customDiagnosticosCollectionRef, { nombre: newDiagName });
+                showToast("Diagnóstico agregado", "success");
+                input.value = '';
+                // El onSnapshot se encargará de recargar la lista
+                // y de seleccionar el nuevo
+                if (!selectedDiagnosticos.includes(newDiagName)) {
+                     selectedDiagnosticos.push(newDiagName);
+                }
+                // Re-renderizar la lista del modal
+                renderDiagnosticoModalList();
+            } catch (error) {
+                console.error("Error agregando diagnóstico:", error);
+                showToast("No se pudo agregar el diagnóstico", "error");
+            }
+        }
+
+        // --- LÓGICA DE CONSULTA Y FILTRADO ---
+
+        /** Aplica todos los filtros y renderiza la lista de pacientes */
+        function applyFiltersAndRender() {
+            const searchTerm = document.getElementById('search-general').value.toLowerCase();
+            const dateStart = document.getElementById('search-date-start').value;
+            const dateEnd = document.getElementById('search-date-end').value;
+            const egStart = parseFloat(document.getElementById('search-eg-start').value);
+            const egEnd = parseFloat(document.getElementById('search-eg-end').value);
+            const patologiaFilter = document.getElementById('search-patologia').value;
+
+            filteredPacientes = allPacientes.filter(p => {
+                // 1. Filtro General (Nombre/Apellido)
+                if (searchTerm && !p.nombre.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+                
+                // 2. Filtro Rango de Fechas (Nacimiento)
+                if (dateStart && p.fechaNacimiento < dateStart) return false;
+                if (dateEnd && p.fechaNacimiento > dateEnd) return false;
+                
+                // 3. Filtro Edad Gestacional (Rango)
+                if (egStart || egEnd) {
+                    if (!p.edadGestacional) return false; // Excluir si no tiene EG y se está filtrando
+                    const eg = parseFloat(p.edadGestacional);
+                    if (egStart && eg < egStart) return false;
+                    if (egEnd && eg > egEnd) return false;
+                }
+                
+                // 4. Filtro Patología
+                if (patologiaFilter && (!p.diagnosticos || !p.diagnosticos.includes(patologiaFilter))) {
+                    return false;
+                }
+                
+                return true; // Pasa todos los filtros
+            });
+            
+            // Renderizar la lista
+            renderPatientList(filteredPacientes);
+        }
+
+        /** Renderiza la lista de pacientes en la vista de consulta */
+        function renderPatientList(pacientes) {
+            const listContainer = document.getElementById('patient-list-container');
+            const counterEl = document.getElementById('patient-count');
+            
+            counterEl.textContent = `${pacientes.length} paciente(s) encontrado(s)`;
+            
+            if (pacientes.length === 0) {
+                listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No se encontraron pacientes que coincidan con la búsqueda.</p>';
+                return;
+            }
+            
+            // Crear el HTML de la lista/tabla
+            // Usar un div con `overflow-x-auto` para responsividad de la tabla
+            listContainer.innerHTML = `
+                <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
+                    <table class="min-w-full divide-y divide-gray-200 bg-white">
+                        <thead class="bg-gray-50">
+                            <tr>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">F. Nac.</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EG</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Procedencia</th>
+                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Status Egreso</th>
+                                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Acciones</span></th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-200">
+                            ${pacientes.map(p => `
+                                <tr class="hover:bg-gray-50">
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-sm font-medium text-gray-900">${p.nombre}</div>
+                                        <div class="text-sm text-gray-500 md:hidden">${p.fechaNacimiento || 'N/A'}</div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden sm:table-cell">${p.fechaNacimiento || 'N/A'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.peso ? `${p.peso} gr` : 'N/A'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.edadGestacional ? `${p.edadGestacional} sem` : 'N/A'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">${p.procedencia || 'N/A'}</td>
+                                    <td class="px-6 py-4 whitespace-nowrap hidden md:table-cell">
+                                        ${p.statusEgreso ? `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                            p.statusEgreso === 'Alta' ? 'bg-green-100 text-green-800' :
+                                            p.statusEgreso === 'Derivación' ? 'bg-yellow-100 text-yellow-800' :
+                                            p.statusEgreso === 'Obito' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
+                                        }">${p.statusEgreso}</span>` : '<span class="text-gray-400">Internado</span>'}
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                        <button data-action="edit" data-id="${p.id}" class="text-blue-600 hover:text-blue-900" title="Editar">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
+                                        </button>
+                                        <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-3" title="Borrar">
+                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        }
+
+        // --- LÓGICA DE EXPORTACIÓN ---
+
+        /** Exporta un array de datos a un archivo CSV */
+        function exportToCsv(dataToExport, filename) {
+            if (dataToExport.length === 0) {
+                showToast("No hay datos para exportar", "warn");
+                return;
+            }
+            
+            const headers = [
+                "ID", "Nombre", "Fecha Nacimiento", "Peso (gr)", "EG (sem)", "Procedencia", 
+                "Fecha Internación", "Fecha Egreso", "Status Egreso", "Diagnósticos"
+            ];
+            const csvRows = [headers.join(',')];
+
+            dataToExport.forEach(p => {
+                // Función para escapar comas y comillas en CSV
+                const escapeCSV = (val) => {
+                    if (val === undefined || val === null) return '';
+                    let str = String(val);
+                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                        str = `"${str.replace(/"/g, '""')}"`; // Escapar comillas dobles duplicándolas
+                    }
+                    return str;
+                };
+
+                const diagnosticosStr = Array.isArray(p.diagnosticos) ? p.diagnosticos.join('; ') : '';
+                
+                const values = [
+                    p.id,
+                    p.nombre,
+                    p.fechaNacimiento,
+                    p.peso,
+                    p.edadGestacional,
+                    p.procedencia,
+                    p.fechaInternacion,
+                    p.fechaEgreso,
+                    p.statusEgreso,
+                    diagnosticosStr
+                ].map(escapeCSV); // Aplicar escape a todos los valores
+                
+                csvRows.push(values.join(','));
+            });
+
+            const csvString = csvRows.join('\n');
+            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+            const link = document.createElement('a');
+            const url = URL.createObjectURL(blob);
+            
+            link.setAttribute('href', url);
+            link.setAttribute('download', `${filename}.csv`);
+            link.style.visibility = 'hidden';
+            
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            showToast("Datos exportados", "success");
+        }
+
+        // --- DATOS (DIAGNÓSTICOS) ---
+
+        /** Popula la lista base de diagnósticos */
+        function populateBaseDiagnosticos() {
+             baseDiagnosticos = [
+                "Taquipnea Transitoria del Recién Nacido (TTRN)", "Síndrome de Dificultad Respiratoria (SDR)", "Síndrome de Aspiración de Líquido Amniótico Meconial (SALAM)", 
+                "Hipertensión Pulmonar Persistente del Recién Nacido (HPPRN)", "Neumonía Neonatal Precoz", "Neumonía Neonatal Tardía", "Displasia Broncopulmonar (DBP)", 
+                "Apnea del Prematuro", "Neumotórax", "Hernia Diafragmática Congénita", "Atresia de Coanas", "Enfisema Lobar Congénito", "Malformación Adenomatosa Quística Pulmonar", 
+                "Hiperbilirrubinemia Neonatal", "Hipoglucemia Neonatal", "Hipocalcemia Neonatal", "Hipotermia Neonatal", "Inestabilidad Térmica", "Anemia del Prematuro", 
+                "Policitemia Neonatal", "Enfermedad Hemorrágica del Recién Nacido", "Trombocitopenia Neonatal Inmune", "Trombocitopenia Neonatal No Inmune", 
+                "Trastornos de la Coagulación Neonatal", "Hiponatremia", "Hipernatremia", "Hipomagnesemia", "Sospecha de Error Innato del Metabolismo", 
+                "Sospecha de Sepsis Neonatal Precoz", "Sepsis Neonatal Precoz Confirmada", "Sospecha de Sepsis Neonatal Tardía", "Sepsis Neonatal Tardía Confirmada", 
+                "Meningitis Neonatal", "Infección por Citomegalovirus (CMV) Congénito", "Infección por Herpes Simple (HSV) Neonatal", "Sífilis Congénita", 
+                "Toxoplasmosis Congénita", "Conjuntivitis Neonatal Química", "Conjuntivitis Neonatal Gonocócica", "Conjuntivitis Neonatal por Clamidia", "Onfalitis", 
+                "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales", 
+                "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV", 
+                "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia", 
+                "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
+                "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)", 
+                "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)", 
+                "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal", 
+                "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante", 
+                "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria", 
+                "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal", 
+                "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa", 
+                "Diarrea Neonatal Metabólica", "Deshidratación Neonatal", 
+                "Prematurez", // Diagnóstico consolidado
+                "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1", 
+                "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4", 
+                "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)", 
+                "Extremado Bajo Peso al Nacer (EBPN)", "Insuficiencia Renal Aguda (IRA) Neonatal", "Hidronefrosis Neonatal", "Reflujo Vesicoureteral", 
+                "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)", 
+                "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)", 
+                "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma", 
+                "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
+                "Hipotiroidismo Congénito"
+            ];
+            baseDiagnosticos.sort();
+        }
+
+    </script>
+
+    <!-- Estilos CSS personalizados (además de Tailwind) -->
     <style>
-        body {
-            font-family: 'Inter', sans-serif;
-            overscroll-behavior: none; /* Evita el "rebote" en móviles */
+        /* Estilo para el scrollbar del modal (opcional pero recomendado) */
+        #diag-modal-list::-webkit-scrollbar {
+            width: 8px;
         }
-
-        /* Estilos para el menú desplegable múltiple personalizado */
-        .multi-select-container {
-            position: relative;
+        #diag-modal-list::-webkit-scrollbar-track {
+            background: #f1f1f1;
+            border-radius: 10px;
         }
-
-        .multi-select-trigger {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-            padding: 0.625rem; /* 10px / p-2.5 */
-            background-color: #f9fafb; /* bg-gray-50 */
-            border: 1px solid #d1d5db; /* border-gray-300 */
-            border-radius: 0.5rem; /* rounded-lg */
-            font-size: 0.875rem; /* text-sm */
-            color: #111827; /* text-gray-900 */
-            cursor: pointer;
+        #diag-modal-list::-webkit-scrollbar-thumb {
+            background: #cbd5e1; /* cool-gray-300 */
+            border-radius: 10px;
         }
-
-        .multi-select-trigger:focus {
-            outline: 2px solid transparent;
-            outline-offset: 2px;
-            border-color: #2563eb; /* focus:border-blue-500 */
-            box-shadow: 0 0 0 2px #bfdbfe; /* focus:ring-blue-500 */
-        }
-
-        .multi-select-dropdown {
-            position: absolute;
-            top: 100%;
-            left: 0;
-            right: 0;
-            z-index: 10;
-            max-height: 200px;
-            overflow-y: auto;
-            background-color: white;
-            border: 1px solid #d1d5db;
-            border-top: none;
-            border-radius: 0 0 0.5rem 0.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
-        }
-
-        .multi-select-dropdown.hidden {
-            display: none;
-        }
-
-        .multi-select-option {
-            display: block;
-            width: 100%;
-            padding: 0.5rem 0.75rem;
-            font-size: 0.875rem;
-            text-align: left;
-            cursor: pointer;
-        }
-        
-        .multi-select-option:hover {
-            background-color: #f3f4f6; /* bg-gray-100 */
-        }
-        
-        .multi-select-option label {
-            display: flex;
-            align-items: center;
-            width: 100%;
-            cursor: pointer;
-        }
-
-        .multi-select-option input[type="checkbox"] {
-            margin-right: 0.5rem; /* mr-2 */
-            cursor: pointer;
-        }
-        
-        .multi-select-add-new {
-            padding: 0.5rem 0.75rem;
-            font-size: 0.875rem;
-            color: #1d4ed8; /* text-blue-700 */
-            font-weight: 500; /* medium */
-            cursor: pointer;
-            border-top: 1px solid #e5e7eb; /* border-t border-gray-200 */
-        }
-        
-        .multi-select-add-new:hover {
-            background-color: #eff6ff; /* bg-blue-50 */
-        }
-
-        /* Ocultar scrollbars */
-        .no-scrollbar::-webkit-scrollbar {
-            display: none;
-        }
-        .no-scrollbar {
-            -ms-overflow-style: none; /* IE y Edge */
-            scrollbar-width: none; /* Firefox */
-        }
-
-        /* Estilo de página */
-        .page {
-            display: none;
-        }
-        .page.active {
-            display: block;
-        }
-        
-        /* Ocultar spinner de inputs numéricos */
-        input[type=number]::-webkit-inner-spin-button, 
-        input[type=number]::-webkit-outer-spin-button { 
-          -webkit-appearance: none; 
-          margin: 0; 
-        }
-        input[type=number] {
-          -moz-appearance: textfield; /* Firefox */
+        #diag-modal-list::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8; /* cool-gray-400 */
         }
     </style>
 </head>
-<body class="bg-gray-100 h-full overflow-hidden">
 
-    <!-- Contenedor principal de la aplicación -->
-    <div class="h-full w-full max-w-lg mx-auto bg-white shadow-lg flex flex-col">
+<body class="bg-gray-100 font-sans antialiased">
 
-        <!-- ===== PÁGINA DE LOGIN ===== -->
-        <div id="page-login" class="page active flex-grow flex flex-col justify-center items-center p-6">
-            <h1 class="text-3xl font-bold text-teal-700 mb-2">Bienvenida</h1>
-            <p class="text-gray-600 mb-8">Iniciá sesión para ver tus pacientes.</p>
-            
-            <form id="form-login" class="w-full space-y-4">
-                <div>
-                    <label for="login-email" class="block text-sm font-medium text-gray-700">Email</label>
-                    <input type="email" id="login-email" autocomplete="email" required class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                </div>
-                <div>
-                    <label for="login-password" class="block text-sm font-medium text-gray-700">Contraseña</label>
-                    <input type="password" id="login-password" autocomplete="current-password" required class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                </div>
-                
-                <p id="login-error" class="text-sm text-red-600 hidden"></p>
-                
-                <div class="pt-2">
-                    <button type="submit" id="btn-login" class="w-full bg-teal-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2 flex justify-center items-center">
-                        <span class="btn-login-text">Ingresar</span>
-                        <!-- Icono de carga para login -->
-                        <svg id="login-spinner" class="animate-spin h-5 w-5 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+    <!-- Contenedor Principal -->
+    <div class="min-h-screen">
+        
+        <!-- Header -->
+        <header class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center">
+                        <svg class="h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
                         </svg>
+                        <h1 class="ml-3 text-2xl font-bold text-gray-800">NeoManager</h1>
+                        <span class="ml-2 text-sm font-medium text-gray-500 hidden sm:inline">Hosp. Carrillo - Neonatología</span>
+                    </div>
+                    <div class="text-xs text-gray-400" id="user-id-display">Conectando...</div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Navegación por Pestañas -->
+        <div class="bg-white shadow-sm -mt-px">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <nav class="flex space-x-8 -mb-px">
+                    <button id="tab-ingreso" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
+                        Ingreso / Edición
                     </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- ===== PÁGINA DE CARGA (post-login) ===== -->
-        <div id="page-loading" class="page flex-grow flex flex-col justify-center items-center text-gray-500">
-            <!-- Icono de carga SVG -->
-            <svg class="animate-spin h-12 w-12 text-teal-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p class="mt-4 text-lg font-medium">Cargando tus datos...</p>
-        </div>
-
-        <!-- ===== PÁGINA: LISTA DE PACIENTES ===== -->
-        <div id="page-list" class="page flex-grow flex flex-col h-full">
-            <!-- Cabecera -->
-            <header class="bg-teal-700 text-white p-4 shadow-md z-10">
-                <div class="flex justify-between items-center">
-                    <h1 class="text-2xl font-bold">Pacientes</h1>
-                    <button id="btn-admin-page" class="p-2 rounded-full hover:bg-teal-600 focus:outline-none focus:ring-2 focus:ring-white">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                    <button id="tab-consulta" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
+                        Consulta y Búsqueda
                     </button>
-                </div>
-                <div class="mt-4">
-                    <input type="search" id="search-bar" class="w-full px-4 py-2 rounded-full text-gray-800 focus:outline-none" placeholder="Buscar paciente...">
-                </div>
-            </header>
-
-            <!-- Lista -->
-            <main class="flex-grow overflow-y-auto no-scrollbar p-4 space-y-3">
-                <ul id="patient-list" class="divide-y divide-gray-200">
-                    <!-- Los pacientes se insertarán aquí -->
-                </ul>
-                <p id="no-patients" class="text-center text-gray-500 py-10">No hay pacientes cargados.</p>
-            </main>
-
-            <!-- Botón flotante para agregar -->
-            <button id="btn-add-patient" class="absolute bottom-6 right-6 bg-teal-600 text-white rounded-full p-4 shadow-lg hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-            </button>
+                </nav>
+            </div>
         </div>
 
-        <!-- ===== PÁGINA: DETALLE DEL PACIENTE ===== -->
-        <div id="page-patient-detail" class="page flex-grow flex flex-col h-full">
-            <!-- Cabecera -->
-            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
-                <button id="btn-back-to-list" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                </button>
-                <h1 id="detail-patient-name" class="text-xl font-bold text-gray-800 truncate px-2">Nombre Paciente</h1>
-                <button id="btn-edit-patient" class="p-2 rounded-full text-gray-600 hover:bg-gray-200 flex-shrink-0">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L16.732 3.732z"></path></svg>
-                </button>
-            </header>
+        <!-- Contenido Principal -->
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-            <!-- Contenido -->
-            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
-                <div class="space-y-4">
-                    <!-- Info Básica -->
-                    <div class="bg-white p-4 rounded-lg shadow">
-                        <div class="grid grid-cols-2 gap-4">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Edad</label>
-                                <p id="detail-patient-age" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">F. Nacimiento</label>
-                                <p id="detail-patient-dob" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Peso al Nacer</label>
-                                <p id="detail-patient-birthWeight" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Edad Gest.</label>
-                                <p id="detail-patient-gestationalAge" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
+            <!-- ======================================================= -->
+            <!-- VISTA 1: INGRESO DE PACIENTES (Oculta por defecto)       -->
+            <!-- ======================================================= -->
+            <div id="ingreso-view" class="hidden">
+                <form id="patient-form" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
+                    <h2 id="form-title" class="text-2xl font-semibold text-gray-900 mb-6">Ingreso de Nuevo Paciente</h2>
+                    
+                    <!-- Datos Personales -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="md:col-span-2">
+                            <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
+                            <input type="text" id="nombre" name="nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" required>
+                        </div>
+                        
+                        <div>
+                            <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
+                            <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        
+                        <div>
+                            <label for="procedencia" class="block text-sm font-medium text-gray-700">Procedencia</label>
+                            <select id="procedencia" name="procedencia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">Seleccionar...</option>
+                                <option value="Sala de partos">Sala de partos</option>
+                                <option value="Quirófano">Quirófano</option>
+                                <option value="Derivado">Derivado</option>
+                                <option value="Contrareferencia">Contrareferencia</option>
+                                <option value="Guardia">Guardia</option>
+                            </select>
+                        </div>
+                        
+                        <div>
+                            <label for="peso" class="block text-sm font-medium text-gray-700">Peso al Nacer (gramos)</label>
+                            <input type="number" id="peso" name="peso" placeholder="Ej: 2500" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+
+                        <div>
+                            <label for="edadGestacional" class="block text-sm font-medium text-gray-700">Edad Gestacional (semanas)</label>
+                            <input type="number" step="0.1" id="edadGestacional" name="edadGestacional" placeholder="Ej: 38.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
                     </div>
                     
-                    <!-- Contacto y Cobertura -->
-                    <div class="bg-white p-4 rounded-lg shadow">
-                        <div class="space-y-3">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Madre</label>
-                                <p id="detail-patient-motherName" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Teléfono</label>
-                                <a href="#" id="detail-patient-motherPhone" class="text-lg font-semibold text-teal-700 hover:underline"></a>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Cobertura</label>
-                                <p id="detail-patient-coverage" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Lugar de Atención</label>
-                                <p id="detail-patient-location" class="text-lg font-semibold text-gray-900"></p>
-                            </div>
+                    <!-- Datos de Internación -->
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div>
+                            <label for="fechaInternacion" class="block text-sm font-medium text-gray-700">Fecha de Internación</label>
+                            <input type="date" id="fechaInternacion" name="fechaInternacion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
-                    </div>
-
-                    <!-- Antecedentes y Notas -->
-                    <div class="bg-white p-4 rounded-lg shadow">
-                        <div class="space-y-3">
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Antecedentes</label>
-                                <div id="detail-patient-antecedentes" class="flex flex-wrap gap-2 mt-1">
-                                    <!-- Se rellena dinámicamente -->
-                                </div>
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium text-gray-500">Notas Generales</label>
-                                <p id="detail-patient-notes" class="text-gray-800 whitespace-pre-wrap"></p>
-                            </div>
+                        
+                        <div>
+                            <label for="fechaEgreso" class="block text-sm font-medium text-gray-700">Fecha de Egreso</label>
+                            <input type="date" id="fechaEgreso" name="fechaEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
-                    </div>
 
-                    <!-- Pendientes -->
-                    <div id="detail-pendientes-container" class="bg-yellow-50 border-l-4 border-yellow-400 p-4 rounded-lg shadow">
-                        <div class="flex justify-between items-center">
-                            <h3 class="text-lg font-semibold text-yellow-800">Pendientes</h3>
-                            <button id="btn-resolve-pendientes" class="text-sm bg-yellow-200 text-yellow-800 px-3 py-1 rounded-full hover:bg-yellow-300">Resolver</button>
+                        <div class="md:col-span-2">
+                             <label for="statusEgreso" class="block text-sm font-medium text-gray-700">Status de Egreso</label>
+                            <select id="statusEgreso" name="statusEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">(Sin egreso)</option>
+                                <option value="Alta">Alta</option>
+                                <option value="Derivación">Derivación</option>
+                                <option value="Obito">Óbito</option>
+                            </select>
                         </div>
-                        <p id="detail-patient-pendientes" class="text-yellow-700 whitespace-pre-wrap mt-2"></p>
-                    </div>
-
-                    <!-- Próxima Consulta -->
-                    <div class="bg-blue-50 border-l-4 border-blue-400 p-4 rounded-lg shadow">
-                        <h3 class="text-lg font-semibold text-blue-800">Próxima Consulta</h3>
-                        <p id="detail-patient-nextAppointment" class="text-blue-700"></p>
-                    </div>
-
-                    <!-- Historial de Consultas -->
-                    <div>
-                        <h3 class="text-xl font-semibold text-gray-800 mb-2">Historial de Consultas</h3>
-                        <div id="consult-history-list" class="space-y-2">
-                            <!-- Historial se carga aquí -->
-                        </div>
-                    </div>
-                </div>
-            </main>
-
-            <!-- Botón flotante para consulta -->
-            <button id="btn-add-consult" class="absolute bottom-6 right-6 bg-blue-600 text-white rounded-full p-4 shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
-            </button>
-        </div>
-
-        <!-- ===== PÁGINA: FORMULARIO PACIENTE (Agregar/Editar) ===== -->
-        <div id="page-patient-form" class="page flex-grow flex flex-col h-full">
-            <!-- Cabecera -->
-            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
-                <button id="btn-cancel-patient" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-                <h1 id="patient-form-title" class="text-xl font-bold text-gray-800">Nuevo Paciente</h1>
-                <button id="btn-delete-patient" class="p-2 rounded-full text-red-500 hover:bg-red-100 hidden">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
-            </header>
-
-            <!-- Formulario -->
-            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
-                <form id="form-patient" class="space-y-4">
-                    <input type="hidden" id="patient-id">
-                    <div>
-                        <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
-                        <input type="text" id="nombre" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
-                    </div>
-                    <div>
-                        <label for="madre" class="block text-sm font-medium text-gray-700">Nombre de la Madre</label>
-                        <input type="text" id="madre" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                    </div>
-                    <div>
-                        <label for="telefono" class="block text-sm font-medium text-gray-700">Teléfono de la Madre</label>
-                        <input type="tel" id="telefono" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                    </div>
-                    <div>
-                        <label for="dob" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
-                        <input type="date" id="dob" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
-                    </div>
-                    <div>
-                        <label for="birthWeight" class="block text-sm font-medium text-gray-700">Peso al Nacer (grs)</label>
-                        <input type="number" id="birthWeight" placeholder="Ej: 3200" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                    </div>
-                    <div>
-                        <label for="gestationalAge" class="block text-sm font-medium text-gray-700">Edad Gestacional (sem)</label>
-                        <input type="number" id="gestationalAge" placeholder="Ej: 39" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
                     </div>
                     
-                    <!-- Campo Personalizado: Cobertura -->
-                    <div>
-                        <label for="cobertura" class="block text-sm font-medium text-gray-700">Cobertura Médica</label>
-                        <select id="cobertura" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                            <option value="Particular">Particular</option>
-                            <option value="IOMA">IOMA</option>
-                            <option value="Otras">Otras</option>
-                            <option value="add_new_cobertura">+ Agregar nueva...</option>
-                        </select>
-                    </div>
-
-                    <!-- Campo Personalizado: Lugar -->
-                    <div>
-                        <label for="lugar" class="block text-sm font-medium text-gray-700">Lugar de Atención</label>
-                        <select id="lugar" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                            <option value="Caseros">Caseros</option>
-                            <option value="Alsina">Alsina</option>
-                            <option value="Hospital">Hospital</option>
-                            <option value="add_new_lugar">+ Agregar nueva...</option>
-                        </select>
-                    </div>
-
-                    <!-- Campo Personalizado: Antecedentes (Selección Múltiple) -->
-                    <div>
-                        <label for="antecedentes-trigger" class="block text-sm font-medium text-gray-700">Antecedentes Relevantes</label>
-                        <div class="multi-select-container mt-1">
-                            <button type="button" id="antecedentes-trigger" class="multi-select-trigger">
-                                <span>Seleccionar...</span>
-                                <!-- Icono flecha abajo -->
-                                <svg class="w-5 h-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                    <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                </svg>
+                    <!-- Diagnósticos -->
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-700">Diagnósticos al Egreso</label>
+                        <div class="mt-2">
+                            <button type="button" id="btn-open-diag-modal" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                Seleccionar Diagnósticos
                             </button>
-                            <div id="antecedentes-dropdown" class="multi-select-dropdown hidden">
-                                <div id="antecedentes-options" class="divide-y divide-gray-100">
-                                    <!-- Opciones se cargan dinámicamente -->
-                                </div>
-                                <div id="antecedentes-add-new" class="multi-select-add-new">
-                                    + Agregar nueva...
-                                </div>
-                            </div>
+                        </div>
+                        <div id="selected-diagnosticos-display" class="mt-4 p-3 bg-gray-50 rounded-md min-h-[50px] border border-gray-200">
+                            <p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>
                         </div>
                     </div>
 
-                    <div>
-                        <label for="notas" class="block text-sm font-medium text-gray-700">Notas Generales</label>
-                        <textarea id="notas" rows="4" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
-                    </div>
-                    
-                    <div class="pt-4">
-                        <button type="submit" class="w-full bg-teal-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
+                    <!-- Botones de Acción -->
+                    <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
+                        <button type="button" id="btn-cancelar-edicion" class="hidden px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            Cancelar
+                        </button>
+                        <button type="submit" id="btn-submit-form" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
                             Guardar Paciente
                         </button>
                     </div>
                 </form>
-            </main>
-        </div>
-        
-        <!-- ===== PÁGINA: FORMULARIO CONSULTA (Agregar/Editar) ===== -->
-        <div id="page-consult-form" class="page flex-grow flex flex-col h-full">
-            <!-- Cabecera -->
-            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
-                <button id="btn-cancel-consult" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                </button>
-                <h1 id="consult-form-title" class="text-xl font-bold text-gray-800">Nueva Consulta</h1>
-                <button id="btn-delete-consult" class="p-2 rounded-full text-red-500 hover:bg-red-100 hidden">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                </button>
-            </header>
+            </div>
 
-            <!-- Formulario -->
-            <main class="flex-grow overflow-y-auto no-scrollbar p-4">
-                <form id="form-consult" class="space-y-4">
-                    <input type="hidden" id="consult-id">
-                    <input type="hidden" id="consult-patient-id">
-                    
-                    <div>
-                        <label for="consult-date" class="block text-sm font-medium text-gray-700">Fecha de Consulta</label>
-                        <input type="date" id="consult-date" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
-                    </div>
-
-                    <!-- Campo Personalizado: Motivo -->
-                    <div>
-                        <label for="consult-motivo" class="block text-sm font-medium text-gray-700">Motivo de Consulta</label>
-                        <select id="consult-motivo" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                            <option value="Control de salud">Control de salud</option>
-                            <option value="Control pre escolar">Control pre escolar</option>
-                            <option value="Patología aguda">Patología aguda</option>
-                            <option value="Otras">Otras</option>
-                            <option value="add_new_motivo">+ Agregar nuevo...</option>
-                        </select>
-                    </div>
-                    
-                    <div class="grid grid-cols-3 gap-4">
+            <!-- ======================================================= -->
+            <!-- VISTA 2: CONSULTA DE PACIENTES (Visible por defecto)   -->
+            <!-- ======================================================= -->
+            <div id="consulta-view">
+                <!-- Panel de Filtros -->
+                <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+                    <div class="flex flex-col gap-4"> <!-- Contenedor principal de filtros cambiado a flex-col -->
+                        
+                        <!-- Fila 1: Filtro General -->
                         <div>
-                            <label for="consult-peso" class="block text-sm font-medium text-gray-700">Peso (kg)</label>
-                            <input type="number" step="0.01" id="consult-peso" placeholder="Ej: 5.2" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                            <label for="search-general" class="block text-sm font-medium text-gray-700">Buscar por Nombre y Apellido</label>
+                            <input type="text" id="search-general" placeholder="Escriba un nombre o apellido..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
                         </div>
-                        <div>
-                            <label for="consult-talla" class="block text-sm font-medium text-gray-700">Talla (cm)</label>
-                            <input type="number" step="0.1" id="consult-talla" placeholder="Ej: 55.5" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                        
+                        <!-- Fila 2: Filtro Edad Gestacional (Rango) -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="search-eg-start" class="block text-sm font-medium text-gray-700">EG Desde (sem)</label>
+                                <input type="number" step="0.1" id="search-eg-start" placeholder="Ej: 30.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="search-eg-end" class="block text-sm font-medium text-gray-700">EG Hasta (sem)</label>
+                                <input type="number" step="0.1" id="search-eg-end" placeholder="Ej: 36" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
                         </div>
-                        <div>
-                            <label for="consult-pc" class="block text-sm font-medium text-gray-700">PC (cm)</label>
-                            <input type="number" step="0.1" id="consult-pc" placeholder="Ej: 38.2" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700">Control de Vacunas</label>
-                        <div class="mt-2 space-x-4">
-                            <label class="inline-flex items-center">
-                                <input type="radio" name="vacunas" value="Completa" class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300">
-                                <span class="ml-2 text-sm text-gray-700">Completa</span>
-                            </label>
-                            <label class="inline-flex items-center">
-                                <input type="radio" name="vacunas" value="Incompleta" class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300">
-                                <span class="ml-2 text-sm text-gray-700">Incompleta</span>
-                            </label>
-                        </div>
-                    </div>
-                    
-                    <div>
-                        <label for="consult-notas" class="block text-sm font-medium text-gray-700">Notas de la Consulta</label>
-                        <textarea id="consult-notas" rows="5" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm"></textarea>
-                    </div>
 
-                    <div>
-                        <label for="consult-pendientes" class="block text-sm font-medium text-gray-700">Pendientes (para próxima consulta)</label>
-                        <textarea id="consult-pendientes" rows="3" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" placeholder="Ej: Traer análisis, interconsulta con..."></textarea>
+                        <!-- Fila 3: Filtro Fecha Nacimiento -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="search-date-start" class="block text-sm font-medium text-gray-700">Nacidos desde</label>
+                                <input type="date" id="search-date-start" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="search-date-end" class="block text-sm font-medium text-gray-700">Nacidos hasta</p>
+                                <input type="date" id="search-date-end" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                        </div>
+                        
+                        <!-- Fila 4: Filtro Patología -->
+                        <div>
+                            <label for="search-patologia" class="block text-sm font-medium text-gray-700">Buscar por Patología</label>
+                            <select id="search-patologia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">-- Todas las Patologías --</option>
+                                <!-- Esta lista se poblará con JS -->
+                            </select>
+                        </div>
                     </div>
+                </div>
 
-                    <div>
-                        <label for="consult-next" class="block text-sm font-medium text-gray-700">Programar Próxima Consulta</label>
-                        <input type="date" id="consult-next" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm">
+                <!-- Acciones (Exportar, Nuevo) -->
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
+                    <div class="text-sm font-medium text-gray-700 mb-2 sm:mb-0" id="patient-count">
+                        Cargando pacientes...
                     </div>
-                    
-                    <div class="pt-4">
-                        <button type="submit" class="w-full bg-blue-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                            Guardar Consulta
+                    <div class="flex space-x-3">
+                        <button id="btn-export-filtered" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Exportar Filtrados
+                        </button>
+                        <button id="btn-export-all" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Exportar Todo
+                        </button>
+                        <button id="btn-nuevo-paciente" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            Nuevo Paciente
                         </button>
                     </div>
-                </form>
-            </main>
-        </div>
-        
-        <!-- ===== PÁGINA: ADMINISTRACIÓN ===== -->
-        <div id="page-admin" class="page flex-grow flex flex-col h-full">
-            <!-- Cabecera -->
-            <header class="bg-gray-50 p-4 shadow-sm z-10 flex justify-between items-center">
-                <button id="btn-back-to-list-from-admin" class="p-2 rounded-full text-gray-600 hover:bg-gray-200">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
-                </button>
-                <h1 class="text-xl font-bold text-gray-800">Administración</h1>
-                <div></div> <!-- Placeholder para centrar título -->
-            </header>
-
-            <!-- Contenido -->
-            <main class="flex-grow overflow-y-auto no-scrollbar p-4 space-y-6">
-                <div>
-                    <h2 class="text-lg font-semibold text-gray-800">Exportar Datos</h2>
-                    <p class="text-sm text-gray-600 mt-1">Exporta todos los datos de pacientes y consultas a un archivo CSV (Excel).</p>
-                    <button id="btn-export-csv" class="mt-3 w-full bg-green-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
-                        Exportar a CSV
-                    </button>
-                </div>
-                
-                <div>
-                    <h2 class="text-lg font-semibold text-gray-800">Estado de la Conexión</h2>
-                    <p class="text-sm text-gray-600 mt-1">Información de tu base de datos privada.</p>
-                    <div class="mt-3 bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <div class="flex items-center">
-                            <span id="connection-status-icon" class="w-3 h-3 bg-gray-400 rounded-full mr-2"></span>
-                            <span id="connection-status-text" class="text-gray-700">Conectando...</span>
-                        </div>
-                        <p id="admin-user-email" class="text-xs text-gray-500 mt-2 truncate">No autenticado</p>
-                    </div>
                 </div>
 
-                <div class="border-t border-gray-200 pt-6">
-                    <h2 class="text-lg font-semibold text-gray-800">Sesión</h2>
-                    <button id="btn-logout" class="mt-3 w-full bg-gray-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:ring-offset-2">
-                        Cerrar Sesión
-                    </button>
+                <!-- Lista de Pacientes -->
+                <div id="patient-list-container">
+                    <!-- El contenido se genera con JS -->
+                    <p class="text-gray-500 text-center py-8">Cargando pacientes...</p>
                 </div>
-                
-                <div class="border-t border-gray-200 pt-6">
-                    <h2 class="text-lg font-semibold text-gray-800">Zona de Peligro</h2>
-                    <p class="text-sm text-gray-600 mt-1">Esta acción no se puede deshacer.</p>
-                    <button id="btn-delete-all-data" class="mt-3 w-full bg-red-600 text-white py-3 px-4 rounded-lg shadow font-semibold hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                        Borrar TODOS mis datos
-                    </button>
-                </div>
-            </main>
-        </div>
-
-    </div> <!-- Fin del contenedor principal -->
-
-    <!-- ===== MODAL DE CONFIRMACIÓN (genérico) ===== -->
-    <div id="modal-confirm" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-40 flex justify-center items-center p-4 hidden">
-        <div class="bg-white rounded-lg shadow-xl w-full max-w-sm">
-            <div class="p-6">
-                <h3 id="modal-confirm-title" class="text-xl font-semibold text-gray-900">Confirmar Acción</h3>
-                <p id="modal-confirm-body" class="mt-2 text-gray-600">¿Estás seguro?</p>
             </div>
-            <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
-                <button id="modal-confirm-cancel" class_original="bg-white text-gray-700 border border-gray-300 hover:bg-gray-50" class="py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
-                    Cancelar
+
+        </main>
+    </div>
+
+    <!-- ======================================================= -->
+    <!-- MODALES Y OVERLAYS (Ocultos por defecto)               -->
+    <!-- ======================================================= -->
+
+    <!-- Overlay de Carga -->
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="flex flex-col items-center">
+            <svg class="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p id="loading-message" class="text-white text-lg mt-4">Cargando...</p>
+        </div>
+    </div>
+    
+    <!-- Notificación Toast -->
+    <div id="toast-notification" class="hidden opacity-0 transition-opacity duration-500 fixed bottom-5 right-5 w-auto max-w-sm p-4 rounded-lg shadow-lg text-white">
+        <p id="toast-message">Mensaje de notificación.</p>
+    </div>
+
+    <!-- Modal de Confirmación de Borrado -->
+    <div id="delete-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div class="flex items-start">
+                <div class="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
+                    <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <div class="ml-4 flex-1">
+                    <h3 class="text-lg font-medium text-gray-900">Confirmar Borrado</h3>
+                    <p class="mt-2 text-sm text-gray-500">
+                        ¿Estás seguro de que quieres borrar al paciente <strong id="delete-patient-name" class="font-medium text-gray-800"></strong>?
+                        Esta acción no se puede deshacer.
+                    </p>
+                </div>
+            </div>
+            <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                <button id="btn-confirm-delete" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
+                    Borrar
                 </button>
-                <button id="modal-confirm-ok" class_original="bg-red-600 text-white hover:bg-red-700" class="py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
-                    Confirmar
+                <button id="btn-cancel-delete" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                    Cancelar
                 </button>
             </div>
         </div>
     </div>
     
-    <!-- ===== MODAL DE PROMPT (genérico) ===== -->
-    <div id="modal-prompt" class="fixed inset-0 bg-gray-900 bg-opacity-60 z-40 flex justify-center items-center p-4 hidden">
-        <form id="form-prompt" class="bg-white rounded-lg shadow-xl w-full max-w-sm">
-            <div class="p-6">
-                <h3 id="modal-prompt-title" class="text-xl font-semibold text-gray-900">Nuevo Valor</h3>
-                <label id="modal-prompt-label" for="modal-prompt-input" class="mt-2 text-sm text-gray-600 block">Introduce un valor:</label>
-                <input type="text" id="modal-prompt-input" class="mt-1 block w-full bg-gray-50 border-gray-300 rounded-lg shadow-sm focus:border-teal-500 focus:ring-teal-500 text-sm" required>
-            </div>
-            <div class="bg-gray-50 px-6 py-4 flex justify-end space-x-3 rounded-b-lg">
-                <button type="button" id="modal-prompt-cancel" class="bg-white text-gray-700 border border-gray-300 hover:bg-gray-50 py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-gray-400 focus:ring-offset-2">
-                    Cancelar
-                </button>
-                <button type="submit" id="modal-prompt-ok" class="bg-teal-600 text-white hover:bg-teal-700 py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 focus:ring-offset-2">
-                    Aceptar
+    <!-- Modal de Selección de Diagnósticos -->
+    <div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-30 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full h-[90vh] flex flex-col">
+            <!-- Header del Modal -->
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h3 class="text-xl font-semibold text-gray-900">Seleccionar Diagnósticos</h3>
+                <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
                 </button>
             </div>
-        </form>
+            
+            <!-- Contenido del Modal -->
+            <div class="p-4 flex-grow overflow-y-hidden flex flex-col">
+                <!-- Filtro y Agregar Nuevo -->
+                <div class="mb-4">
+                    <input type="text" id="diag-modal-search" placeholder="Buscar diagnóstico..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                </div>
+                <div class="flex space-x-2 mb-4">
+                    <input type="text" id="diag-modal-new-diag" placeholder="Agregar nuevo diagnóstico..." class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    <button id="btn-add-new-diag" class="flex-shrink-0 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                        Agregar
+                    </button>
+                </div>
+                
+                <!-- Lista de Diagnósticos (con scroll) -->
+                <div class="flex-grow overflow-y-auto" style="max-height: calc(90vh - 250px);"> <!-- Ajustar altura máxima -->
+                    <ul id="diag-modal-list" class="space-y-1">
+                        <!-- Checkboxes generados por JS -->
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Footer del Modal -->
+            <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                <button id="btn-save-diag-modal" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    Guardar Selección
+                </button>
+            </div>
+        </div>
     </div>
-
-
-    <!-- Scripts de Firebase -->
-    <script type="module">
-        // --- SDKs de Firebase ---
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            onAuthStateChanged, 
-            signInWithEmailAndPassword,
-            signOut,
-            setPersistence,
-            browserLocalPersistence // Almacena la sesión localmente
-            // --- FIX: Removido setLogLevel as setAuthLogLevel ---
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            getDoc, 
-            setDoc, 
-            onSnapshot, 
-            setLogLevel as setFirestoreLogLevel 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-
-        /**
-         * ----------------------------------------------------------------
-         * APLICACIÓN DE SEGUIMIENTO PEDIÁTRICO (v2 con Login)
-         * ----------------------------------------------------------------
-         */
-        const App = {
-            // Firebase
-            app: null,
-            auth: null,
-            db: null,
-            dbUnsubscribe: null, // Para desconectar el listener de Firestore
-            
-            // Estado de la App
-            appId: 'default-app-id', // ID de la app (para la ruta de la DB)
-            userId: null, // ID del usuario LOGUEADO
-            currentPatientId: null, 
-            currentConsultId: null, 
-            dbRef: null, // Referencia al documento PRIVADO de la base de datos
-            
-            // Estado de los datos (caché local)
-            data: {
-                patients: {}, 
-                consults: {}, 
-                options: { 
-                    cobertura: ["Particular", "IOMA", "Otras"],
-                    lugar: ["Caseros", "Alsina", "Hospital"],
-                    antecedentes: ["Prematurez", "Bajo peso al nacer", "Ictericia", "Bronquiolitis", "Neumonia"],
-                    motivo: ["Control de salud", "Control pre escolar", "Patología aguda", "Otras"]
-                }
-            },
-
-            // Referencias a elementos del DOM
-            dom: {},
-
-            /**
-             * INICIO DE LA APLICACIÓN
-             */
-            init() {
-                try {
-                    // --- FIX: Removido setAuthLogLevel('debug') ---
-                    setFirestoreLogLevel('debug');
-                } catch(e) { console.warn("No se pudo activar el log de Firebase", e); }
-
-                this.cacheDOM();
-                this.addEventListeners();
-                this.initFirebase();
-            },
-
-            /**
-             * Almacena referencias a elementos del DOM
-             */
-            cacheDOM() {
-                this.dom.pages = {
-                    login: document.getElementById('page-login'),
-                    loading: document.getElementById('page-loading'),
-                    list: document.getElementById('page-list'),
-                    detail: document.getElementById('page-patient-detail'),
-                    patientForm: document.getElementById('page-patient-form'),
-                    consultForm: document.getElementById('page-consult-form'),
-                    admin: document.getElementById('page-admin'),
-                };
-                
-                this.dom.modals = {
-                    confirm: document.getElementById('modal-confirm'),
-                    confirmTitle: document.getElementById('modal-confirm-title'),
-                    confirmBody: document.getElementById('modal-confirm-body'),
-                    confirmOk: document.getElementById('modal-confirm-ok'),
-                    confirmCancel: document.getElementById('modal-confirm-cancel'),
-                    prompt: document.getElementById('modal-prompt'),
-                    promptForm: document.getElementById('form-prompt'),
-                    promptTitle: document.getElementById('modal-prompt-title'),
-                    promptLabel: document.getElementById('modal-prompt-label'),
-                    promptInput: document.getElementById('modal-prompt-input'),
-                    promptOk: document.getElementById('modal-prompt-ok'),
-                    promptCancel: document.getElementById('modal-prompt-cancel'),
-                };
-
-                // --- Formulario Login ---
-                this.dom.loginForm = {
-                    form: document.getElementById('form-login'),
-                    email: document.getElementById('login-email'),
-                    password: document.getElementById('login-password'),
-                    error: document.getElementById('login-error'),
-                    submitButton: document.getElementById('btn-login'),
-                    submitText: document.querySelector('.btn-login-text'),
-                    submitSpinner: document.getElementById('login-spinner'),
-                };
-
-                // --- Formulario Paciente ---
-                this.dom.patientForm = {
-                    form: document.getElementById('form-patient'),
-                    title: document.getElementById('patient-form-title'),
-                    id: document.getElementById('patient-id'),
-                    nombre: document.getElementById('nombre'),
-                    madre: document.getElementById('madre'),
-                    telefono: document.getElementById('telefono'),
-                    dob: document.getElementById('dob'),
-                    birthWeight: document.getElementById('birthWeight'),
-                    gestationalAge: document.getElementById('gestationalAge'),
-                    cobertura: document.getElementById('cobertura'),
-                    lugar: document.getElementById('lugar'),
-                    antecedentesTrigger: document.getElementById('antecedentes-trigger'),
-                    antecedentesDropdown: document.getElementById('antecedentes-dropdown'),
-                    antecedentesOptions: document.getElementById('antecedentes-options'),
-                    antecedentesAddNew: document.getElementById('antecedentes-add-new'),
-                    notas: document.getElementById('notas'),
-                    deleteButton: document.getElementById('btn-delete-patient'),
-                };
-
-                // --- Formulario Consulta ---
-                this.dom.consultForm = {
-                    form: document.getElementById('form-consult'),
-                    title: document.getElementById('consult-form-title'),
-                    id: document.getElementById('consult-id'),
-                    patientId: document.getElementById('consult-patient-id'),
-                    date: document.getElementById('consult-date'),
-                    motivo: document.getElementById('consult-motivo'),
-                    peso: document.getElementById('consult-peso'),
-                    talla: document.getElementById('consult-talla'),
-                    pc: document.getElementById('consult-pc'),
-                    vacunas: document.getElementsByName('vacunas'),
-                    notas: document.getElementById('consult-notas'),
-                    pendientes: document.getElementById('consult-pendientes'),
-                    next: document.getElementById('consult-next'),
-                    deleteButton: document.getElementById('btn-delete-consult'),
-                };
-                
-                // --- Otros ---
-                this.dom.searchBar = document.getElementById('search-bar');
-                this.dom.patientList = document.getElementById('patient-list');
-                this.dom.noPatients = document.getElementById('no-patients');
-                this.dom.connectionIcon = document.getElementById('connection-status-icon');
-                this.dom.connectionText = document.getElementById('connection-status-text');
-                this.dom.adminUserEmail = document.getElementById('admin-user-email');
-                this.dom.detailMotherPhone = document.getElementById('detail-patient-motherPhone');
-            },
-
-            /**
-             * Configura los listeners de eventos de la UI
-             */
-            addEventListeners() {
-                // --- Login/Logout ---
-                this.dom.loginForm.form.onsubmit = (e) => this.handleLogin(e);
-                document.getElementById('btn-logout').onclick = () => this.handleLogout();
-
-                // --- Navegación ---
-                document.getElementById('btn-add-patient').onclick = () => this.showPatientForm();
-                document.getElementById('btn-admin-page').onclick = () => this.navigate('admin');
-                document.getElementById('btn-back-to-list').onclick = () => this.navigate('list');
-                document.getElementById('btn-back-to-list-from-admin').onclick = () => this.navigate('list');
-                document.getElementById('btn-cancel-patient').onclick = () => this.navigate(this.currentPatientId ? 'detail' : 'list');
-                document.getElementById('btn-edit-patient').onclick = () => this.showPatientForm(this.currentPatientId);
-                
-                document.getElementById('btn-add-consult').onclick = () => this.showConsultForm(this.currentPatientId);
-                document.getElementById('btn-cancel-consult').onclick = () => this.navigate('detail');
-                
-                // Búsqueda
-                this.dom.searchBar.oninput = () => this.renderPatientList();
-                
-                // Formularios
-                this.dom.patientForm.form.onsubmit = (e) => this.handleSavePatient(e);
-                this.dom.consultForm.form.onsubmit = (e) => this.handleSaveConsult(e);
-                
-                // Selects personalizados
-                this.dom.patientForm.cobertura.onchange = (e) => this.handleCustomSelect(e, 'cobertura');
-                this.dom.patientForm.lugar.onchange = (e) => this.handleCustomSelect(e, 'lugar');
-                this.dom.consultForm.motivo.onchange = (e) => this.handleCustomSelect(e, 'motivo');
-
-                // Menú múltiple de Antecedentes
-                this.dom.patientForm.antecedentesTrigger.onclick = () => this.toggleAntecedentesDropdown();
-                this.dom.patientForm.antecedentesAddNew.onclick = () => this.handleAddNewAntecedente();
-                document.addEventListener('click', (e) => {
-                    if (this.dom.patientForm.antecedentesTrigger && !this.dom.patientForm.antecedentesTrigger.contains(e.target) && this.dom.patientForm.antecedentesDropdown && !this.dom.patientForm.antecedentesDropdown.contains(e.target)) {
-                        this.dom.patientForm.antecedentesDropdown.classList.add('hidden');
-                    }
-                });
-
-                // Acciones
-                document.getElementById('btn-delete-patient').onclick = () => this.handleDeletePatient();
-                document.getElementById('btn-delete-consult').onclick = () => this.handleDeleteConsult();
-                document.getElementById('btn-resolve-pendientes').onclick = () => this.resolvePendientes();
-                document.getElementById('btn-export-csv').onclick = () => this.exportToCSV();
-                document.getElementById('btn-delete-all-data').onclick = () => this.handleDeleteAllData();
-                
-                // Modales
-                this.dom.modals.confirmCancel.onclick = () => this.hideModal('confirm');
-                this.dom.modals.promptCancel.onclick = () => this.hideModal('prompt');
-                this.dom.modals.promptForm.onsubmit = (e) => e.preventDefault(); 
-            },
-
-            /**
-             * Inicializa Firebase y la autenticación
-             */
-            initFirebase() {
-                try {
-                    // CONFIGURACIÓN DE FIREBASE (PEGADA POR EL USUARIO)
-                    const firebaseConfig = {
-                      apiKey: "AIzaSyD7qqOK2Rqj9-PFpPgYuSM-xQXc8GBCNi0",
-                      authDomain: "consultoriopediatria-961aa.firebaseapp.com",
-                      projectId: "consultoriopediatria-961aa",
-                      storageBucket: "consultoriopediatria-961aa.firebasestorage.app",
-                      messagingSenderId: "573582470827",
-                      appId: "1:573582470827:web:50553186ad07b125a111ee",
-                      measurementId: "G-FGEK8CB3ZY"
-                    };
-
-                    this.app = initializeApp(firebaseConfig);
-                    this.auth = getAuth(this.app);
-                    this.db = getFirestore(this.app);
-                    
-                    // --- CAMBIO IMPORTANTE: Persistencia de sesión ---
-                    // Esto mantiene al usuario logueado incluso si cierra el navegador.
-                    setPersistence(this.auth, browserLocalPersistence)
-                        .then(() => {
-                            // Ahora que la persistencia está configurada, iniciamos el listener
-                            this.setupAuthListener();
-                        })
-                        .catch((error) => {
-                            console.error("Error al setear persistencia:", error);
-                            this.setupAuthListener(); // Continuar de todos modos
-                        });
-                    
-                } catch (e) {
-                    console.error("Error al inicializar Firebase:", e);
-                    this.navigate('login');
-                    this.dom.loginForm.error.innerText = "Error de Configuración de Firebase.";
-                    this.dom.loginForm.error.style.display = 'block';
-                }
-            },
-            
-            /**
-             * Configura el listener de autenticación
-             */
-            setupAuthListener() {
-                onAuthStateChanged(this.auth, (user) => {
-                    if (user) {
-                        // --- Usuario Logueado ---
-                        this.userId = user.uid;
-                        this.dom.adminUserEmail.innerText = user.email || user.uid;
-                        console.log("Usuario autenticado:", this.userId);
-                        
-                        // Mostrar carga mientras se conect a la DB
-                        this.navigate('loading'); 
-                        
-                        // Conectar a la base de datos PRIVADA del usuario
-                        this.setupFirestoreListener(); 
-                        
-                    } else {
-                        // --- Usuario No Logueado ---
-                        this.userId = null;
-                        this.dom.adminUserEmail.innerText = "No autenticado";
-                        console.log("Usuario no autenticado.");
-                        
-                        // Desconectar listener de DB anterior
-                        if (this.dbUnsubscribe) {
-                            this.dbUnsubscribe();
-                            this.dbUnsubscribe = null;
-                        }
-                        
-                        // Limpiar datos locales
-                        this.data.patients = {};
-                        this.data.consults = {};
-                        
-                        // Mostrar página de login
-                        this.navigate('login');
-                        this.showLoginLoading(false); // Asegurarse de que el spinner de login esté apagado
-                    }
-                });
-            },
-            
-            /**
-             * Maneja el envío del formulario de login
-             */
-            handleLogin(e) {
-                e.preventDefault();
-                const email = this.dom.loginForm.email.value;
-                const password = this.dom.loginForm.password.value;
-                
-                this.showLoginLoading(true);
-                this.dom.loginForm.error.style.display = 'none';
-
-                signInWithEmailAndPassword(this.auth, email, password)
-                    .then((userCredential) => {
-                        // El listener onAuthStateChanged se encargará del resto
-                        console.log("Login exitoso:", userCredential.user.uid);
-                    })
-                    .catch((error) => {
-                        console.error("Error de Login:", error.code, error.message);
-                        this.showLoginLoading(false);
-                        if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
-                            this.dom.loginForm.error.innerText = "Email o contraseña incorrectos.";
-                        } else {
-                            this.dom.loginForm.error.innerText = "Error al iniciar sesión. Verificá tu conexión.";
-                        }
-                        this.dom.loginForm.error.style.display = 'block';
-                    });
-            },
-            
-            /**
-             * Maneja el clic en "Cerrar Sesión"
-             */
-            handleLogout() {
-                this.showModal(
-                    'confirm',
-                    'Cerrar Sesión',
-                    '¿Estás seguro de que querés cerrar sesión?',
-                    () => {
-                        signOut(this.auth).catch((error) => {
-                            console.error("Error al cerrar sesión:", error);
-                        });
-                        this.hideModal('confirm');
-                        // El listener onAuthStateChanged se encargará de navegar a la página de login
-                    },
-                    'Cancelar',
-                    'Cerrar Sesión'
-                );
-            },
-            
-            /**
-             * Muestra/oculta el spinner del botón de login
-             */
-            showLoginLoading(isLoading) {
-                 if (isLoading) {
-                    this.dom.loginForm.submitText.style.display = 'none';
-                    this.dom.loginForm.submitSpinner.style.display = 'block';
-                    this.dom.loginForm.submitButton.disabled = true;
-                 } else {
-                    this.dom.loginForm.submitText.style.display = 'block';
-                    this.dom.loginForm.submitSpinner.style.display = 'none';
-                    this.dom.loginForm.submitButton.disabled = false;
-                 }
-            },
-            
-            /**
-             * Configura el listener de Firestore para sincronizar datos
-             */
-            setupFirestoreListener() {
-                if (this.dbUnsubscribe) this.dbUnsubscribe();
-                if (!this.userId) return; // No seguir si no hay ID de usuario
-
-                // --- CAMBIO IMPORTANTE: Ruta a la base de datos PRIVADA ---
-                const dbPath = `artifacts/${this.appId}/users/${this.userId}/pediatria/mainDB`;
-                this.dbRef = doc(this.db, dbPath);
-                
-                console.log("Escuchando cambios en Firestore (privado):", dbPath);
-
-                this.dbUnsubscribe = onSnapshot(this.dbRef, (doc) => {
-                    if (doc.exists()) {
-                        console.log("Datos privados recibidos de Firestore.");
-                        const remoteData = doc.data();
-                        
-                        this.data.patients = remoteData.patients || {};
-                        this.data.consults = remoteData.consults || {};
-                        
-                        this.data.options = {
-                            cobertura: remoteData.options?.cobertura || this.data.options.cobertura,
-                            lugar: remoteData.options?.lugar || this.data.options.lugar,
-                            antecedentes: remoteData.options?.antecedentes || this.data.options.antecedentes,
-                            motivo: remoteData.options?.motivo || this.data.options.motivo,
-                        };
-                        
-                    } else {
-                        console.log("No existe el documento privado, se creará uno nuevo al guardar.");
-                        // Resetear datos por si acaso
-                        this.data.patients = {};
-                        this.data.consults = {};
-                    }
-                    
-                    this.updateConnectionStatus(true);
-                    this.renderPatientList();
-                    
-                    if (this.currentPatientId && this.dom.pages.detail.classList.contains('active')) {
-                        if (this.data.patients[this.currentPatientId]) {
-                            this.renderPatientDetail(this.currentPatientId);
-                        } else {
-                            this.currentPatientId = null;
-                            this.navigate('list');
-                        }
-                    }
-                    
-                    if (this.dom.pages.loading.classList.contains('active')) {
-                        this.navigate('list');
-                    }
-                    
-                }, (error) => {
-                    console.error("Error al escuchar datos de Firestore:", error);
-                    this.updateConnectionStatus(false, "Error: " + error.message);
-                    
-                    if (error.code === 'permission-denied') {
-                        this.showModal(
-                            'confirm',
-                            'Error de Permisos',
-                            'No se pudo conectar a tu base de datos. Asegúrate de haber configurado las "Reglas" de seguridad en Firebase para la ruta de usuario.',
-                            null, 
-                            'Cerrar'
-                        );
-                        this.handleLogout(); // Forzar logout si hay error de permisos
-                    }
-                });
-            },
-            
-            /**
-             * Guarda el estado completo de la app en Firestore
-             */
-            async saveDB() {
-                // No guardar si no hay dbRef (p.ej. antes del login)
-                if (!this.dbRef) {
-                    console.error("No hay referencia a la base de datos para guardar. (Probablemente no logueado)");
-                    return;
-                }
-                
-                console.log("Guardando datos en Firestore (privado)...");
-                this.updateConnectionStatus(false, "Guardando..."); 
-                
-                try {
-                    // Usamos setDoc (sin merge) para sobreescribir todo el documento
-                    // Esto asegura que si borramos un paciente, se borre de la DB
-                    await setDoc(this.dbRef, this.data);
-                    console.log("Datos guardados exitosamente.");
-                    // El listener onSnapshot actualizará el estado a "Conectado"
-                } catch (error) {
-                    console.error("Error al guardar datos en Firestore:", error);
-                    this.updateConnectionStatus(false, "Error al guardar");
-                }
-            },
-            
-            /**
-             * Actualiza el indicador visual de conexión
-             */
-            updateConnectionStatus(isConnected, text = null) {
-                if (!this.dom.connectionIcon || !this.dom.connectionText) return;
-                
-                if (isConnected) {
-                    this.dom.connectionText.innerText = text || "Conectado y Sincronizado";
-                    this.dom.connectionIcon.classList.remove('bg-gray-400', 'bg-red-500', 'bg-yellow-500');
-                    this.dom.connectionIcon.classList.add('bg-green-500');
-                } else {
-                    this.dom.connectionText.innerText = text || "Desconectado";
-                    this.dom.connectionIcon.classList.remove('bg-green-500');
-                    this.dom.connectionIcon.classList.add(text && text.includes("Error") ? 'bg-red-500' : 'bg-yellow-500');
-                }
-            },
-
-            /**
-             * Navega entre las diferentes páginas de la app
-             */
-            navigate(pageId) {
-                Object.values(this.dom.pages).forEach(page => {
-                    if (page) page.classList.remove('active');
-                });
-                
-                const targetPage = this.dom.pages[pageId];
-                
-                if (targetPage) {
-                    targetPage.classList.add('active');
-                    console.log(`Navegando a: page-${pageId}`);
-                } else {
-                    console.error(`Página no encontrada: ${pageId}`);
-                    // Fallback a login o lista dependiendo del estado
-                    const fallback = this.userId ? 'list' : 'login';
-                    if (this.dom.pages[fallback]) this.dom.pages[fallback].classList.add('active');
-                }
-            },
-            
-            // ----------------------------------------------------------------
-            // LÓGICA DE PACIENTES (Sin cambios)
-            // ----------------------------------------------------------------
-
-            renderPatientList() {
-                if (!this.dom.patientList) return;
-                
-                this.dom.patientList.innerHTML = '';
-                const searchTerm = this.dom.searchBar.value.toLowerCase();
-                
-                const patientsArray = Object.values(this.data.patients)
-                    .sort((a, b) => a.nombre.localeCompare(b.nombre));
-
-                let visiblePatients = 0;
-                
-                for (const patient of patientsArray) {
-                    if (patient.nombre.toLowerCase().includes(searchTerm) || 
-                        (patient.madre && patient.madre.toLowerCase().includes(searchTerm))) {
-                        
-                        visiblePatients++;
-                        const li = document.createElement('li');
-                        li.className = 'py-4 px-2 flex justify-between items-center cursor-pointer hover:bg-gray-50 rounded-lg';
-                        li.onclick = () => {
-                            this.renderPatientDetail(patient.id);
-                            this.navigate('detail');
-                        };
-                        
-                        li.innerHTML = `
-                            <div>
-                                <p class="text-lg font-semibold text-teal-800">${patient.nombre}</p>
-                                <p class="text-sm text-gray-600">Madre: ${patient.madre || '-'}</p>
-                            </div>
-                            <div class="text-right">
-                                <p class="text-sm text-gray-500">${this.calculateAge(patient.dob).display}</p>
-                                <svg class="w-5 h-5 text-gray-400 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
-                            </div>
-                        `;
-                        this.dom.patientList.appendChild(li);
-                    }
-                }
-                
-                this.dom.noPatients.style.display = (visiblePatients === 0) ? 'block' : 'none';
-            },
-
-            showPatientForm(patientId = null) {
-                this.currentPatientId = patientId;
-                const form = this.dom.patientForm;
-                
-                this.renderSelectOptions(form.cobertura, this.data.options.cobertura, "add_new_cobertura", "");
-                this.renderSelectOptions(form.lugar, this.data.options.lugar, "add_new_lugar", "");
-                this.renderCustomMultiSelect(this.data.options.antecedentes, []);
-                
-                if (patientId) {
-                    const patient = this.data.patients[patientId];
-                    if (!patient) return this.navigate('list');
-                    
-                    form.title.innerText = "Editar Paciente";
-                    form.id.value = patient.id;
-                    form.nombre.value = patient.nombre;
-                    form.madre.value = patient.madre;
-                    form.telefono.value = patient.telefono;
-                    form.dob.value = patient.dob;
-                    form.birthWeight.value = patient.birthWeight;
-                    form.gestationalAge.value = patient.gestationalAge;
-                    form.notas.value = patient.notas;
-                    form.deleteButton.style.display = 'block';
-                    
-                    this.setSelectValue(form.cobertura, patient.cobertura);
-                    this.setSelectValue(form.lugar, patient.lugar);
-                    this.renderCustomMultiSelect(this.data.options.antecedentes, patient.antecedentes || []);
-                    
-                } else {
-                    form.title.innerText = "Nuevo Paciente";
-                    form.form.reset();
-                    form.id.value = '';
-                    form.deleteButton.style.display = 'none';
-                    this.renderCustomMultiSelect(this.data.options.antecedentes, []);
-                }
-                
-                this.navigate('patientForm');
-            },
-
-            handleSavePatient(e) {
-                e.preventDefault();
-                const form = this.dom.patientForm;
-                const id = form.id.value || `p_${new Date().getTime()}`;
-                
-                const selectedAntecedentes = [];
-                form.antecedentesOptions.querySelectorAll('input[type="checkbox"]:checked').forEach(cb => {
-                    selectedAntecedentes.push(cb.value);
-                });
-
-                const patient = {
-                    id: id,
-                    nombre: form.nombre.value.trim(),
-                    madre: form.madre.value.trim(),
-                    telefono: form.telefono.value.trim(),
-                    dob: form.dob.value,
-                    birthWeight: form.birthWeight.value,
-                    gestationalAge: form.gestationalAge.value,
-                    cobertura: form.cobertura.value,
-                    lugar: form.lugar.value,
-                    antecedentes: selectedAntecedentes,
-                    notas: form.notas.value.trim(),
-                    pendientes: this.data.patients[id]?.pendientes || "",
-                    nextAppointment: this.data.patients[id]?.nextAppointment || ""
-                };
-                
-                if (!patient.nombre || !patient.dob) {
-                    this.showModal('confirm', 'Campos requeridos', 'Por favor, completa el Nombre y la Fecha de Nacimiento.', null, 'Entendido');
-                    return;
-                }
-
-                this.data.patients[id] = patient;
-                this.saveDB();
-                
-                this.currentPatientId = id; 
-                this.renderPatientDetail(id);
-                this.navigate('detail');
-            },
-
-            renderPatientDetail(patientId) {
-                this.currentPatientId = patientId;
-                const patient = this.data.patients[patientId];
-                
-                if (!patient) return this.navigate('list');
-                
-                document.getElementById('detail-patient-name').innerText = patient.nombre;
-                
-                const age = this.calculateAge(patient.dob);
-                document.getElementById('detail-patient-age').innerText = age.display;
-                document.getElementById('detail-patient-dob').innerText = this.formatDate(patient.dob);
-                document.getElementById('detail-patient-birthWeight').innerText = patient.birthWeight ? `${patient.birthWeight} grs` : '-';
-                document.getElementById('detail-patient-gestationalAge').innerText = patient.gestationalAge ? `${patient.gestationalAge} sem` : '-';
-                
-                document.getElementById('detail-patient-motherName').innerText = patient.madre || '-';
-                
-                // Hacer el teléfono clickeable
-                if (patient.telefono) {
-                    this.dom.detailMotherPhone.innerText = patient.telefono;
-                    this.dom.detailMotherPhone.href = `tel:${patient.telefono}`;
-                } else {
-                    this.dom.detailMotherPhone.innerText = '-';
-                    this.dom.detailMotherPhone.href = '#';
-                }
-                
-                document.getElementById('detail-patient-coverage').innerText = patient.cobertura || '-';
-                document.getElementById('detail-patient-location').innerText = patient.lugar || '-';
-                
-                const antecedentesContainer = document.getElementById('detail-patient-antecedentes');
-                antecedentesContainer.innerHTML = '';
-                if (patient.antecedentes && patient.antecedentes.length > 0) {
-                    patient.antecedentes.forEach(ant => {
-                        const tag = document.createElement('span');
-                        tag.className = 'bg-teal-100 text-teal-800 text-sm font-medium px-2.5 py-0.5 rounded-full';
-                        tag.innerText = ant;
-                        antecedentesContainer.appendChild(tag);
-                    });
-                } else {
-                    antecedentesContainer.innerText = '-';
-                }
-                
-                document.getElementById('detail-patient-notes').innerText = patient.notas || '-';
-                
-                const pendientesContainer = document.getElementById('detail-pendientes-container');
-                const pendientesText = document.getElementById('detail-patient-pendientes');
-                
-                if (patient.pendientes) {
-                    pendientesText.innerText = patient.pendientes;
-                    pendientesContainer.style.display = 'block';
-                } else {
-                    pendientesContainer.style.display = 'none';
-                }
-
-                const nextAppointmentText = document.getElementById('detail-patient-nextAppointment');
-                if (patient.nextAppointment) {
-                    nextAppointmentText.innerText = this.formatDate(patient.nextAppointment);
-                    nextAppointmentText.parentElement.style.display = 'block';
-                } else {
-                    nextAppointmentText.innerText = 'No programada';
-                    nextAppointmentText.parentElement.style.display = 'none';
-                }
-                
-                this.renderConsultHistory(patientId);
-            },
-            
-            renderConsultHistory(patientId) {
-                const container = document.getElementById('consult-history-list');
-                container.innerHTML = '';
-                
-                const patientConsults = this.data.consults[patientId] || {};
-                
-                if (Object.keys(patientConsults).length === 0) {
-                    container.innerHTML = '<p class="text-gray-500 text-center">No hay consultas registradas.</p>';
-                    return;
-                }
-                
-                const consultsArray = Object.values(patientConsults)
-                    .sort((a, b) => b.date.localeCompare(a.date));
-                    
-                consultsArray.forEach(consult => {
-                    const div = document.createElement('div');
-                    div.className = 'bg-white p-4 rounded-lg shadow border border-gray-200 cursor-pointer hover:border-teal-500';
-                    div.onclick = () => this.showConsultForm(patientId, consult.id);
-                    
-                    div.innerHTML = `
-                        <div class="flex justify-between items-center">
-                            <p class="text-lg font-semibold text-teal-700">${this.formatDate(consult.date)}</p>
-                            <p class="text-sm font-medium text-gray-600">${consult.motivo}</p>
-                        </div>
-                        <p class="text-gray-700 mt-2 whitespace-pre-wrap">${consult.notas || 'Sin notas.'}</p>
-                        ${consult.pendientes ? `
-                            <div class="mt-2 p-2 bg-yellow-50 border-t border-yellow-200 rounded-b-md">
-                                <p class="text-sm font-medium text-yellow-800">Pendiente: ${consult.pendientes}</p>
-                            </div>
-                        ` : ''}
-                    `;
-                    container.appendChild(div);
-                });
-            },
-            
-            handleDeletePatient() {
-                const patientId = this.currentPatientId;
-                if (!patientId) return;
-                
-                const patient = this.data.patients[patientId];
-                
-                this.showModal(
-                    'confirm',
-                    'Borrar Paciente',
-                    `¿Estás seguro de que querés borrar a ${patient.nombre}? Se borrarán también todas sus consultas. Esta acción no se puede deshacer.`,
-                    () => {
-                        delete this.data.patients[patientId];
-                        delete this.data.consults[patientId]; 
-                        this.saveDB();
-                        
-                        this.currentPatientId = null;
-                        this.navigate('list');
-                        this.hideModal('confirm');
-                    },
-                    'Cancelar',
-                    'Borrar Paciente'
-                );
-            },
-
-            // ----------------------------------------------------------------
-            // LÓGICA DE CONSULTAS (Sin cambios)
-            // ----------------------------------------------------------------
-
-            showConsultForm(patientId, consultId = null) {
-                this.currentPatientId = patientId; 
-                this.currentConsultId = consultId;
-                
-                const form = this.dom.consultForm;
-                form.form.reset(); 
-                
-                this.renderSelectOptions(form.motivo, this.data.options.motivo, "add_new_motivo", "");
-                
-                if (consultId) {
-                    const consult = this.data.consults[patientId]?.[consultId];
-                    if (!consult) return this.navigate('detail');
-                    
-                    form.title.innerText = "Editar Consulta";
-                    form.id.value = consult.id;
-                    form.patientId.value = consult.patientId;
-                    form.date.value = consult.date;
-                    this.setSelectValue(form.motivo, consult.motivo);
-                    form.peso.value = consult.peso;
-                    form.talla.value = consult.talla;
-                    form.pc.value = consult.pc;
-                    this.setRadioValue(form.vacunas, consult.vacunas);
-                    form.notas.value = consult.notas;
-                    form.pendientes.value = consult.pendientes;
-                    form.next.value = consult.nextAppointment;
-                    form.deleteButton.style.display = 'block';
-
-                } else {
-                    form.title.innerText = "Nueva Consulta";
-                    form.id.value = '';
-                    form.patientId.value = patientId;
-                    form.date.value = new Date().toISOString().split('T')[0]; 
-                    form.deleteButton.style.display = 'none';
-                    
-                    const patient = this.data.patients[patientId];
-                    if (patient && patient.pendientes) {
-                        form.pendientes.value = patient.pendientes;
-                    }
-                }
-                
-                this.navigate('consultForm');
-            },
-            
-            handleSaveConsult(e) {
-                e.preventDefault();
-                const form = this.dom.consultForm;
-                const patientId = form.patientId.value;
-                const consultId = form.id.value || `c_${new Date().getTime()}`;
-                
-                if (!patientId) return this.navigate('list');
-
-                const consult = {
-                    id: consultId,
-                    patientId: patientId,
-                    date: form.date.value,
-                    motivo: form.motivo.value,
-                    peso: form.peso.value,
-                    talla: form.talla.value,
-                    pc: form.pc.value,
-                    vacunas: this.getRadioValue(form.vacunas),
-                    notas: form.notas.value.trim(),
-                    pendientes: form.pendientes.value.trim(),
-                    nextAppointment: form.next.value
-                };
-                
-                if (!consult.date) {
-                    this.showModal('confirm', 'Campo requerido', 'Por favor, completa la Fecha de la Consulta.', null, 'Entendido');
-                    return;
-                }
-
-                if (!this.data.consults[patientId]) {
-                    this.data.consults[patientId] = {};
-                }
-                
-                this.data.consults[patientId][consultId] = consult;
-                
-                const patient = this.data.patients[patientId];
-                if (patient) {
-                    patient.pendientes = consult.pendientes;
-                    
-                    if (consult.nextAppointment) {
-                        patient.nextAppointment = consult.nextAppointment;
-                    }
-                }
-                
-                this.saveDB();
-                
-                this.renderPatientDetail(patientId);
-                this.navigate('detail');
-            },
-            
-            handleDeleteConsult() {
-                const patientId = this.currentPatientId;
-                const consultId = this.currentConsultId;
-                if (!patientId || !consultId) return;
-
-                this.showModal(
-                    'confirm',
-                    'Borrar Consulta',
-                    `¿Estás seguro de que querés borrar esta consulta del ${this.formatDate(this.dom.consultForm.date.value)}? Esta acción no se puede deshacer.`,
-                    () => {
-                        delete this.data.consults[patientId][consultId];
-                        this.saveDB();
-                        
-                        this.currentConsultId = null;
-                        this.renderPatientDetail(patientId);
-                        this.navigate('detail');
-                        this.hideModal('confirm');
-                    },
-                    'Cancelar',
-                    'Borrar Consulta'
-                );
-            },
-            
-            resolvePendientes() {
-                const patientId = this.currentPatientId;
-                if (!patientId) return;
-                
-                const patient = this.data.patients[patientId];
-                if (!patient || !patient.pendientes) return;
-
-                this.showModal(
-                    'confirm',
-                    'Resolver Pendientes',
-                    '¿Estás seguro de que querés marcar todos los pendientes como resueltos? Se borrarán de la ficha.',
-                    () => {
-                        patient.pendientes = ""; 
-                        this.saveDB();
-                        
-                        this.renderPatientDetail(patientId);
-                        this.hideModal('confirm');
-                    },
-                    'Cancelar',
-                    'Resolver'
-                );
-            },
-            
-            // ----------------------------------------------------------------
-            // LÓGICA DE FORMULARIOS (helpers) (Sin cambios)
-            // ----------------------------------------------------------------
-
-            renderSelectOptions(selectElement, optionsArray, addValue, selectedValue) {
-                if (!selectElement) return;
-                selectElement.innerHTML = ''; 
-                
-                const ph = document.createElement('option');
-                ph.value = "";
-                ph.innerText = "Seleccionar...";
-                ph.disabled = true;
-                ph.selected = !selectedValue;
-                selectElement.appendChild(ph);
-                
-                optionsArray.forEach(option => {
-                    const opt = document.createElement('option');
-                    opt.value = option;
-                    opt.innerText = option;
-                    if (option === selectedValue) opt.selected = true;
-                    selectElement.appendChild(opt);
-                });
-                
-                if (addValue) {
-                    const addOpt = document.createElement('option');
-                    addOpt.value = addValue;
-                    addOpt.innerText = "+ Agregar nueva...";
-                    addOpt.className = "font-medium text-blue-600";
-                    selectElement.appendChild(addOpt);
-                }
-            },
-            
-            setSelectValue(selectElement, value) {
-                if (!selectElement) return;
-                let optionExists = false;
-                for (let i = 0; i < selectElement.options.length; i++) {
-                    if (selectElement.options[i].value === value) {
-                        optionExists = true;
-                        break;
-                    }
-                }
-                if (value && !optionExists) {
-                    const newOpt = document.createElement('option');
-                    newOpt.value = value;
-                    newOpt.innerText = value;
-                    const lastOption = selectElement.options[selectElement.options.length - 1];
-                    selectElement.insertBefore(newOpt, lastOption);
-                }
-                selectElement.value = value;
-            },
-
-            handleCustomSelect(event, optionKey) {
-                const select = event.target;
-                if (select.value === `add_new_${optionKey}`) {
-                    const addValue = `add_new_${optionKey}`;
-                    
-                    this.showPrompt(
-                        `Nueva Opción`,
-                        `Introduce el nuevo valor para "${optionKey}":`,
-                        (newValue) => {
-                            if (newValue && !this.data.options[optionKey].includes(newValue)) {
-                                this.data.options[optionKey].push(newValue);
-                                const newOpt = document.createElement('option');
-                                newOpt.value = newValue;
-                                newOpt.innerText = newValue;
-                                select.insertBefore(newOpt, select.querySelector(`option[value="${addValue}"]`));
-                                select.value = newValue; 
-                                this.saveDB(); 
-                            } else {
-                                select.value = ""; 
-                            }
-                            this.hideModal('prompt');
-                        },
-                        () => {
-                            select.value = ""; 
-                            this.hideModal('prompt');
-                        }
-                    );
-                }
-            },
-            
-            renderCustomMultiSelect(optionsArray, selectedValues) {
-                const container = this.dom.patientForm.antecedentesOptions;
-                if (!container) return;
-                container.innerHTML = ''; 
-                
-                optionsArray.forEach(option => {
-                    const isChecked = selectedValues.includes(option);
-                    const div = document.createElement('div');
-                    div.className = 'multi-select-option';
-                    div.innerHTML = `
-                        <label>
-                            <input type="checkbox" value="${option}" ${isChecked ? 'checked' : ''} class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300 rounded">
-                            <span>${option}</span>
-                        </label>
-                    `;
-                    container.appendChild(div);
-                });
-                
-                this.updateAntecedentesTriggerText();
-                
-                container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
-                    cb.onchange = () => this.updateAntecedentesTriggerText();
-                });
-            },
-            
-            toggleAntecedentesDropdown() {
-                this.dom.patientForm.antecedentesDropdown.classList.toggle('hidden');
-            },
-
-            updateAntecedentesTriggerText() {
-                const checked = this.dom.patientForm.antecedentesOptions.querySelectorAll('input[type="checkbox"]:checked');
-                const triggerSpan = this.dom.patientForm.antecedentesTrigger.querySelector('span');
-                
-                if (checked.length === 0) {
-                    triggerSpan.innerText = 'Seleccionar...';
-                } else if (checked.length <= 2) {
-                    triggerSpan.innerText = Array.from(checked).map(cb => cb.value).join(', ');
-                } else {
-                    triggerSpan.innerText = `${checked.length} seleccionados`;
-                }
-            },
-            
-            handleAddNewAntecedente() {
-                this.showPrompt(
-                    'Nuevo Antecedente',
-                    'Introduce el nuevo antecedente:',
-                    (newValue) => {
-                        if (newValue && !this.data.options.antecedentes.includes(newValue)) {
-                            this.data.options.antecedentes.push(newValue);
-                            this.saveDB();
-                            
-                            const div = document.createElement('div');
-                            div.className = 'multi-select-option';
-                            div.innerHTML = `
-                                <label>
-                                    <input type="checkbox" value="${newValue}" checked class="focus:ring-teal-500 h-4 w-4 text-teal-600 border-gray-300 rounded">
-                                    <span>${newValue}</span>
-                                </label>
-                            `;
-                            div.querySelector('input[type="checkbox"]').onchange = () => this.updateAntecedentesTriggerText();
-                            this.dom.patientForm.antecedentesOptions.appendChild(div);
-                            this.updateAntecedentesTriggerText();
-                        }
-                        this.hideModal('prompt');
-                    },
-                    () => this.hideModal('prompt')
-                );
-            },
-            
-            getRadioValue(radioElements) {
-                for (const radio of radioElements) {
-                    if (radio.checked) return radio.value;
-                }
-                return "";
-            },
-
-            setRadioValue(radioElements, value) {
-                for (const radio of radioElements) {
-                    radio.checked = (radio.value === value);
-                }
-            },
-            
-            // ----------------------------------------------------------------
-            // LÓGICA DE MODALES (Sin cambios)
-            // ----------------------------------------------------------------
-
-            showModal(type, title, body, okCallback, cancelText, okText) {
-                const modal = this.dom.modals[type];
-                if (!modal) return;
-                
-                const titleEl = this.dom.modals[`${type}Title`];
-                const bodyEl = this.dom.modals[`${type}Body`]; 
-                const okEl = this.dom.modals[`${type}Ok`];
-                const cancelEl = this.dom.modals[`${type}Cancel`];
-
-                if (titleEl) titleEl.innerText = title;
-                if (bodyEl) bodyEl.innerText = body;
-                if (okText) okEl.innerText = okText;
-                if (cancelText) cancelEl.innerText = cancelText;
-
-                if (okCallback) {
-                    okEl.style.display = 'inline-flex';
-                    okEl.onclick = okCallback;
-                } else {
-                    okEl.style.display = 'none';
-                }
-                
-                if (type === 'confirm') {
-                    const okBtn = this.dom.modals.confirmOk;
-                    const originalClasses = okBtn.getAttribute('class_original') || 'bg-red-600 text-white hover:bg-red-700';
-                    okBtn.className = `py-2 px-4 rounded-lg font-medium focus:outline-none focus:ring-2 focus:ring-offset-2 ${originalClasses}`; // Reset
-                    
-                    if (okText === 'Resolver') { 
-                        okBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-                        okBtn.classList.add('bg-yellow-600', 'text-white', 'hover:bg-yellow-700', 'focus:ring-yellow-500');
-                    } else if (okText === 'Cerrar Sesión') {
-                        okBtn.classList.remove('bg-red-600', 'hover:bg-red-700', 'focus:ring-red-500');
-                        okBtn.classList.add('bg-gray-700', 'text-white', 'hover:bg-gray-800', 'focus:ring-gray-500');
-                    }
-                }
-                modal.classList.remove('hidden');
-            },
-
-            showPrompt(title, label, okCallback, cancelCallback) {
-                const modal = this.dom.modals.prompt;
-                if (!modal) return;
-                
-                this.dom.modals.promptTitle.innerText = title;
-                this.dom.modals.promptLabel.innerText = label;
-                this.dom.modals.promptInput.value = '';
-                
-                this.dom.modals.promptForm.onsubmit = (e) => {
-                    e.preventDefault();
-                    okCallback(this.dom.modals.promptInput.value.trim());
-                };
-                this.dom.modals.promptCancel.onclick = () => {
-                    cancelCallback();
-                };
-                modal.classList.remove('hidden');
-                setTimeout(() => this.dom.modals.promptInput.focus(), 50); 
-            },
-
-            hideModal(type) {
-                const modal = this.dom.modals[type];
-                if (modal) modal.classList.add('hidden');
-                if (type === 'confirm') this.dom.modals.confirmOk.onclick = null;
-                if (type === 'prompt') {
-                    this.dom.modals.promptForm.onsubmit = null;
-                    this.dom.modals.promptCancel.onclick = null;
-                }
-            },
-            
-            // ----------------------------------------------------------------
-            // LÓGICA DE ADMINISTRACIÓN (Botón de borrar datos actualizado)
-            // ----------------------------------------------------------------
-
-            handleDeleteAllData() {
-                this.showModal(
-                    'confirm',
-                    '¡ACCIÓN IRREVERSIBLE!',
-                    '¿Estás absolutamente seguro de que querés borrar TODOS tus pacientes y consultas? Esta acción no se puede deshacer.',
-                    () => {
-                        this.data.patients = {};
-                        this.data.consults = {};
-                        this.data.options = { 
-                            cobertura: ["Particular", "IOMA", "Otras"],
-                            lugar: ["Caseros", "Alsina", "Hospital"],
-                            antecedentes: ["Prematurez", "Bajo peso al nacer", "Ictericia", "Bronquiolitis", "Neumonia"],
-                            motivo: ["Control de salud", "Control pre escolar", "Patología aguda", "Otras"]
-                        };
-                        this.saveDB(); 
-                        this.hideModal('confirm');
-                        this.showModal('confirm', 'Datos Borrados', 'Todos tus datos han sido eliminados.', null, 'Entendido');
-                    },
-                    'Cancelar',
-                    'BORRAR TODO'
-                );
-            },
-            
-            exportToCSV() {
-                console.log("Exportando a CSV...");
-                let csvContent = "data:text/csv;charset=utf-8,";
-                
-                const headers = [
-                    "ID_Paciente", "Nombre", "Madre", "Telefono", "F_Nacimiento", "Edad_Actual",
-                    "Peso_Nacer_grs", "Edad_Gest_sem", "Cobertura", "Lugar_Atencion", "Antecedentes", "Notas_Generales",
-                    "ID_Consulta", "Fecha_Consulta", "Motivo_Consulta", "Peso_kg", "Talla_cm", "PC_cm",
-                    "Vacunas", "Notas_Consulta", "Pendientes_Consulta"
-                ];
-                csvContent += headers.join(",") + "\r\n";
-                
-                const escapeCSV = (str) => {
-                    if (str === null || str === undefined) return '""';
-                    let result = String(str);
-                    if (result.includes('"') || result.includes(',') || result.includes('\n')) {
-                        result = result.replace(/"/g, '""');
-                        result = `"${result}"`;
-                    }
-                    return result;
-                };
-
-                const patients = Object.values(this.data.patients).sort((a, b) => a.nombre.localeCompare(b.nombre));
-                
-                for (const patient of patients) {
-                    const patientConsults = this.data.consults[patient.id] || {};
-                    const consultsArray = Object.values(patientConsults).sort((a, b) => a.date.localeCompare(b.date));
-                    
-                    const patientRowBase = [
-                        patient.id,
-                        patient.nombre,
-                        patient.madre,
-                        patient.telefono,
-                        patient.dob,
-                        this.calculateAge(patient.dob).display,
-                        patient.birthWeight,
-                        patient.gestationalAge,
-                        patient.cobertura,
-                        patient.lugar,
-                        (patient.antecedentes || []).join('; '), 
-                        patient.notas
-                    ].map(escapeCSV);
-                    
-                    if (consultsArray.length > 0) {
-                        for (const consult of consultsArray) {
-                            const consultRow = [
-                                consult.id,
-                                consult.date,
-                                consult.motivo,
-                                consult.peso,
-                                consult.talla,
-                                consult.pc,
-                                consult.vacunas,
-                                consult.notas,
-                                consult.pendientes
-                            ].map(escapeCSV);
-                            
-                            csvContent += [...patientRowBase, ...consultRow].join(",") + "\r\n";
-                        }
-                    } else {
-                        csvContent += patientRowBase.join(",") + "\r\n";
-                    }
-                }
-                
-                const encodedUri = encodeURI(csvContent);
-                const link = document.createElement("a");
-                link.setAttribute("href", encodedUri);
-                link.setAttribute("download", `export_pediatria_${new Date().toISOString().split('T')[0]}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            },
-
-            // ----------------------------------------------------------------
-            // UTILIDADES (Sin cambios)
-            // ----------------------------------------------------------------
-            
-            calculateAge(dobString) {
-                if (!dobString) return { display: '-', years: 0, months: 0, days: 0 };
-                try {
-                    const dob = new Date(dobString + 'T00:00:00'); 
-                    const today = new Date();
-                    let years = today.getFullYear() - dob.getFullYear();
-                    let months = today.getMonth() - dob.getMonth();
-                    let days = today.getDate() - dob.getDate();
-                    if (days < 0) {
-                        months--;
-                        const prevMonth = new Date(today.getFullYear(), today.getMonth(), 0);
-                        days += prevMonth.getDate();
-                    }
-                    if (months < 0) {
-                        years--;
-                        months += 12;
-                    }
-                    let display = "";
-                    if (years > 0) {
-                        display = `${years} año${years > 1 ? 's' : ''}`;
-                        if (months > 0) display += ` y ${months} mes${months > 1 ? 'es' : ''}`;
-                    } else if (months > 0) {
-                        display = `${months} mes${months > 1 ? 'es' : ''}`;
-                        if (days > 0) display += ` y ${days} día${days > 1 ? 's' : ''}`;
-                    } else {
-                        display = `${days} día${days > 1 ? 's' : ''}`;
-                    }
-                    return { display, years, months, days };
-                } catch (e) {
-                    return { display: 'Error', years: 0, months: 0, days: 0 };
-                }
-            },
-            
-            formatDate(dateString) {
-                if (!dateString) return 'No definida';
-                try {
-                    const [year, month, day] = dateString.split('-');
-                    if (!day || !month || !year) return dateString;
-                    return `${day}/${month}/${year}`;
-                } catch(e) {
-                    return dateString;
-                }
-            }
-        };
-
-        // Iniciar la aplicación
-        document.addEventListener('DOMContentLoaded', () => {
-            App.init();
-        });
-
-    </script>
 
 </body>
 </html>
