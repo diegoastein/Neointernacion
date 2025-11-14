@@ -3,15 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NeoManager - Hospital Carrillo</title>
+
+    <!-- Nombre visible en la pestaña del navegador -->
+    <title>Neonatología Hospital Carrillo</title>
+
+    <!-- Icono de recién nacido (favicon) -->
+    <link rel="icon" type="image/png" href="icono-bebe.png">
+
     <!-- 1. Cargar Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+
     <!-- 2. Cargar Iconos (Heroicons) -->
     <script type="module" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
     <script nomodule src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
-    <!-- 3. Cargar Firebase (Módulos ES) -->
+
+    <!-- 3. Cargar Firebase -->
     <script type="module">
-        // Importar las funciones necesarias de Firebase
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { 
             getAuth, 
@@ -35,1022 +42,737 @@
         // --- VARIABLES GLOBALES ---
         let app, auth, db, userId, appId;
         let pacientesCollectionRef, customDiagnosticosCollectionRef;
-        
-        let allPacientes = []; // Caché local de todos los pacientes
-        let filteredPacientes = []; // Pacientes que coinciden con los filtros
-        let baseDiagnosticos = []; // La lista larga de diagnósticos
-        let customDiagnosticos = []; // Diagnósticos agregados por usuarios
-        let allDiagnosticos = []; // Lista combinada
-        
-        let selectedDiagnosticos = []; // Diagnósticos seleccionados en el modal
-        let editingPatientId = null; // ID del paciente que se está editando
-        let patientToDeleteId = null; // ID del paciente a borrar
 
-        // --- CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE!) ---
-        // Estas variables DEBEN ser reemplazadas por las de tu proyecto Firebase.
-        // Vienen del entorno de Canvas o puedes pegarlas aquí manualmente.
-       const firebaseConfig = {
-    apiKey: "AIzaSyApnwRZQklxTBLhwBBIoyAcCiBAgzyhtvE",
-    authDomain: "neomanager-a4482.firebaseapp.com",
-    projectId: "neomanager-a4482",
-    storageBucket: "neomanager-a4482.firebasestorage.app",
-    messagingSenderId: "574188152831",
-    appId: "1:574188152831:web:34ab797c5b709e7e3429ca"
-  };
+        let allPacientes = [];
+        let filteredPacientes = [];
+        let baseDiagnosticos = [];
+        let customDiagnosticos = [];
+        let allDiagnosticos = [];
+
+        let selectedDiagnosticos = [];
+        let editingPatientId = null;
+        let patientToDeleteId = null;
+
+        // --- CONFIGURACIÓN FIREBASE ---
+        const firebaseConfig = {
+            apiKey: "AIzaSyApnwRZQklxTBLhwBBIoyAcCiBAgzyhtvE",
+            authDomain: "neomanager-a4482.firebaseapp.com",
+            projectId: "neomanager-a4482",
+            storageBucket: "neomanager-a4482.firebasestorage.app",
+            messagingSenderId: "574188152831",
+            appId: "1:574188152831:web:34ab797c5b709e7e3429ca"
+        };
+
         appId = typeof __app_id !== 'undefined' ? __app_id : 'neo-manager-default';
-        
-        // --- INICIALIZACIÓN DE LA APP ---
-        
+
+        // --- INICIO ---
         document.addEventListener('DOMContentLoaded', () => {
-            // Inicializar Firebase
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-            setLogLevel('Debug'); // Mostrar logs detallados de Firestore
+            setLogLevel("debug");
 
-            // Llenar la lista base de diagnósticos
             populateBaseDiagnosticos();
-            
-            // Configurar listeners de la UI
             setupUIListeners();
-            
-            // Iniciar autenticación
             handleAuth();
         });
 
-        // --- MANEJO DE AUTENTICACIÓN Y DATOS ---
+        // ===============================
+        //  AUTENTICACIÓN
+        // ===============================
 
         function handleAuth() {
             showLoading(true, "Autenticando...");
+
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
-                    console.log("Usuario autenticado:", userId);
-                    document.getElementById('user-id-display').textContent = `ID de Usuario: ${userId}`;
+                    document.getElementById("user-id-display").textContent = `ID Usuario: ${userId}`;
 
-                    // Definir rutas de la base de datos (colaborativas)
-                    const publicDataPath = `artifacts/${appId}/public/data`;
-                    pacientesCollectionRef = collection(db, `${publicDataPath}/pacientes`);
-                    customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
-                    
-                    // Cargar datos
-                    loadCustomDiagnosticos(); // Cargar primero para que estén listos para los pacientes
+                    const basePath = `artifacts/${appId}/public/data`;
+                    pacientesCollectionRef = collection(db, `${basePath}/pacientes`);
+                    customDiagnosticosCollectionRef = collection(db, `${basePath}/diagnosticos_custom`);
+
+                    loadCustomDiagnosticos();
                     loadPacientes();
-                    
+
                     showLoading(false);
-                    showView('ingreso-view'); // Empezar en la vista de ingreso
+                    showView("ingreso-view");
                 } else {
-                    // Si no hay usuario, intentar loguearse
                     try {
-                        if (typeof __initial_auth_token !== 'undefined') {
+                        if (typeof __initial_auth_token !== "undefined") {
                             await signInWithCustomToken(auth, __initial_auth_token);
                         } else {
                             await signInAnonymously(auth);
                         }
-                    } catch (error) {
-                        console.error("Error de autenticación:", error);
+                    } catch (e) {
+                        console.error(e);
+                        showToast("Error al autenticar", "error");
                         showLoading(false);
-                        showToast("Error de autenticación. La app no funcionará.", 'error');
                     }
                 }
             });
         }
 
-        /** Carga y escucha los diagnósticos customizados */
         function loadCustomDiagnosticos() {
             onSnapshot(query(customDiagnosticosCollectionRef), (snapshot) => {
-                customDiagnosticos = snapshot.docs.map(doc => doc.data().nombre).sort();
-                console.log("Diagnósticos customizados cargados:", customDiagnosticos.length);
+                customDiagnosticos = snapshot.docs.map(d => d.data().nombre).sort();
                 updateAllDiagnosticosList();
-            }, (error) => {
-                console.error("Error al cargar diagnósticos custom:", error);
-                showToast("Error al cargar lista de diagnósticos.", 'error');
             });
         }
 
-        /** Carga y escucha los pacientes */
         function loadPacientes() {
             showLoading(true, "Cargando pacientes...");
+
             onSnapshot(query(pacientesCollectionRef), (snapshot) => {
-                allPacientes = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                console.log("Pacientes cargados:", allPacientes.length);
-                // Aplicar filtros y renderizar la lista
+                allPacientes = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
                 applyFiltersAndRender();
                 showLoading(false);
-            }, (error) => {
-                console.error("Error al cargar pacientes:", error);
-                showToast("Error al cargar pacientes.", 'error');
-                showLoading(false);
             });
         }
 
-        // --- MANEJO DE LA UI (VISTAS, MODALES, ETC) ---
+        // ===============================
+        //  UI - VISTAS, MODALES, TOASTS
+        // ===============================
 
-        /** Configura todos los event listeners de la UI */
         function setupUIListeners() {
-            // Pestañas
-            document.getElementById('tab-ingreso').addEventListener('click', () => showView('ingreso-view'));
-            document.getElementById('tab-consulta').addEventListener('click', () => showView('consulta-view'));
-            
-            // Botón "Nuevo Paciente" (en vista consulta)
-            document.getElementById('btn-nuevo-paciente').addEventListener('click', () => {
+            document.getElementById("tab-ingreso").addEventListener("click", () => showView("ingreso-view"));
+            document.getElementById("tab-consulta").addEventListener("click", () => showView("consulta-view"));
+
+            document.getElementById("btn-nuevo-paciente").addEventListener("click", () => {
                 resetForm();
-                showView('ingreso-view');
+                showView("ingreso-view");
             });
 
-            // Formulario de Ingreso
-            document.getElementById('patient-form').addEventListener('submit', handleFormSubmit);
-            document.getElementById('btn-cancelar-edicion').addEventListener('click', (e) => {
+            document.getElementById("patient-form").addEventListener("submit", handleFormSubmit);
+            document.getElementById("btn-cancelar-edicion").addEventListener("click", (e) => {
                 e.preventDefault();
                 resetForm();
-                showView('consulta-view');
+                showView("consulta-view");
             });
 
-            // Modal de Diagnósticos
-            document.getElementById('btn-open-diag-modal').addEventListener('click', () => showDiagnosticoModal(true));
-            document.getElementById('btn-close-diag-modal').addEventListener('click', () => showDiagnosticoModal(false));
-            document.getElementById('btn-save-diag-modal').addEventListener('click', saveDiagnosticosFromModal);
-            document.getElementById('diag-modal-search').addEventListener('input', renderDiagnosticoModalList);
-            document.getElementById('btn-add-new-diag').addEventListener('click', addNewDiagnostico);
-            
-            // Modal de Borrado
-            document.getElementById('btn-cancel-delete').addEventListener('click', () => showDeleteModal(false));
-            document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeletePatient);
+            // Modal diagnósticos
+            document.getElementById("btn-open-diag-modal").addEventListener("click", () => showDiagnosticoModal(true));
+            document.getElementById("btn-close-diag-modal").addEventListener("click", () => showDiagnosticoModal(false));
+            document.getElementById("btn-save-diag-modal").addEventListener("click", saveDiagnosticosFromModal);
+            document.getElementById("diag-modal-search").addEventListener("input", renderDiagnosticoModalList);
+            document.getElementById("btn-add-new-diag").addEventListener("click", addNewDiagnostico);
 
-            // Filtros de Búsqueda (se activan al cambiar)
-            document.getElementById('search-general').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-date-start').addEventListener('change', applyFiltersAndRender);
-            document.getElementById('search-date-end').addEventListener('change', applyFiltersAndRender);
-            document.getElementById('search-eg-start').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
+            // Modal borrado
+            document.getElementById("btn-cancel-delete").addEventListener("click", () => showDeleteModal(false));
+            document.getElementById("btn-confirm-delete").addEventListener("click", confirmDeletePatient);
 
-            // Botones de Exportación
-            document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(allPacientes, 'pacientes_neo_total'));
-            document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrado'));
-            
-            // Clic en la lista de pacientes (para editar/borrar)
-            document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
+            // Filtros
+            document.getElementById("search-general").addEventListener("input", applyFiltersAndRender);
+            document.getElementById("search-date-start").addEventListener("change", applyFiltersAndRender);
+            document.getElementById("search-date-end").addEventListener("change", applyFiltersAndRender);
+            document.getElementById("search-eg-start").addEventListener("input", applyFiltersAndRender);
+            document.getElementById("search-eg-end").addEventListener("input", applyFiltersAndRender);
+            document.getElementById("search-patologia").addEventListener("change", applyFiltersAndRender);
+
+            document.getElementById("btn-export-all").addEventListener("click", () => exportToCsv(allPacientes, "pacientes_total"));
+            document.getElementById("btn-export-filtered").addEventListener("click", () => exportToCsv(filteredPacientes, "pacientes_filtrados"));
+
+            document.getElementById("patient-list-container").addEventListener("click", handlePatientListClick);
         }
 
-        /** Cambia entre la vista de 'Ingreso' y 'Consulta' */
         function showView(viewId) {
-            const ingresoView = document.getElementById('ingreso-view');
-            const consultaView = document.getElementById('consulta-view');
-            const tabIngreso = document.getElementById('tab-ingreso');
-            const tabConsulta = document.getElementById('tab-consulta');
+            const ingreso = document.getElementById("ingreso-view");
+            const consulta = document.getElementById("consulta-view");
 
-            if (viewId === 'ingreso-view') {
-                ingresoView.classList.remove('hidden');
-                consultaView.classList.add('hidden');
-                tabIngreso.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
-                tabIngreso.classList.remove('text-gray-500');
-                tabConsulta.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
-                tabConsulta.classList.add('text-gray-500');
-            } else {
-                ingresoView.classList.add('hidden');
-                consultaView.classList.remove('hidden');
-                tabIngreso.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
-                tabIngreso.classList.add('text-gray-500');
-                tabConsulta.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
-                tabConsulta.classList.remove('text-gray-500');
-                applyFiltersAndRender(); // Asegurarse de que la lista esté actualizada
-            }
+            ingreso.classList.toggle("hidden", viewId !== "ingreso-view");
+            consulta.classList.toggle("hidden", viewId !== "consulta-view");
         }
 
-        /** Muestra u oculta el overlay de carga */
         function showLoading(show, message = "Cargando...") {
-            const overlay = document.getElementById('loading-overlay');
-            const messageEl = document.getElementById('loading-message');
-            if (show) {
-                messageEl.textContent = message;
-                overlay.classList.remove('hidden');
-            } else {
-                overlay.classList.add('hidden');
-            }
+            const overlay = document.getElementById("loading-overlay");
+            document.getElementById("loading-message").textContent = message;
+            overlay.classList.toggle("hidden", !show);
         }
-        
-        /** Muestra un mensaje temporal (toast) */
-        function showToast(message, type = 'success') {
-            const toast = document.getElementById('toast-notification');
-            const toastMessage = document.getElementById('toast-message');
-            
-            toastMessage.textContent = message;
-            
-            // Quitar clases de color anteriores
-            toast.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500');
-            
-            if (type === 'success') {
-                toast.classList.add('bg-green-500');
-            } else if (type === 'error') {
-                toast.classList.add('bg-red-500');
-            } else {
-                toast.classList.add('bg-yellow-500');
-            }
-            
-            toast.classList.remove('hidden', 'opacity-0');
-            
+
+        function showToast(message, type = "success") {
+            const toast = document.getElementById("toast-notification");
+            const text = document.getElementById("toast-message");
+
+            text.textContent = message;
+
+            toast.classList.remove("bg-red-500", "bg-yellow-500", "bg-green-500");
+
+            toast.classList.add(type === "success" ? "bg-green-500" :
+                                type === "error" ? "bg-red-500" : "bg-yellow-500");
+
+            toast.classList.remove("hidden", "opacity-0");
+
             setTimeout(() => {
-                toast.classList.add('opacity-0');
-                setTimeout(() => toast.classList.add('hidden'), 500); // Esperar a que termine la transición
+                toast.classList.add("opacity-0");
+                setTimeout(() => toast.classList.add("hidden"), 500);
             }, 3000);
         }
 
-        /** Muestra u oculta el modal de diagnósticos */
         function showDiagnosticoModal(show) {
-            const modal = document.getElementById('diagnostico-modal');
+            const modal = document.getElementById("diagnostico-modal");
             if (show) {
-                // Al abrir, renderizar la lista
                 renderDiagnosticoModalList();
-                modal.classList.remove('hidden');
+                modal.classList.remove("hidden");
             } else {
-                // Al cerrar, limpiar el filtro
-                document.getElementById('diag-modal-search').value = '';
-                modal.classList.add('hidden');
+                modal.classList.add("hidden");
+                document.getElementById("diag-modal-search").value = "";
             }
         }
-        
-        /** Muestra u oculta el modal de confirmación de borrado */
-        function showDeleteModal(show, patientName = '') {
-            const modal = document.getElementById('delete-modal');
+
+        function showDeleteModal(show, name = "") {
+            const modal = document.getElementById("delete-modal");
             if (show) {
-                document.getElementById('delete-patient-name').textContent = patientName;
-                modal.classList.remove('hidden');
+                document.getElementById("delete-patient-name").textContent = name;
+                modal.classList.remove("hidden");
             } else {
-                modal.classList.add('hidden');
+                modal.classList.add("hidden");
                 patientToDeleteId = null;
             }
         }
 
-        // --- LÓGICA DEL FORMULARIO DE INGRESO ---
+        // ===============================
+        //  FORMULARIO PACIENTE
+        // ===============================
 
-        /** Maneja el envío del formulario (Crear o Actualizar) */
         async function handleFormSubmit(e) {
             e.preventDefault();
             showLoading(true, "Guardando...");
 
-            const form = e.target;
-            const patientData = {
-                nombre: form.nombre.value,
-                fechaNacimiento: form.fechaNacimiento.value,
-                peso: form.peso.valueAsNumber,
-                edadGestacional: form.edadGestacional.valueAsNumber,
-                procedencia: form.procedencia.value,
-                fechaInternacion: form.fechaInternacion.value,
-                fechaEgreso: form.fechaEgreso.value,
-                statusEgreso: form.statusEgreso.value,
-                diagnosticos: selectedDiagnosticos, // Guardar el array de diagnósticos
-                // Metadatos
+            const f = e.target;
+
+            const data = {
+                nombre: f.nombre.value,
+                fechaNacimiento: f.fechaNacimiento.value,
+                peso: f.peso.valueAsNumber,
+                edadGestacional: f.edadGestacional.valueAsNumber,
+                procedencia: f.procedencia.value,
+                fechaInternacion: f.fechaInternacion.value,
+                fechaEgreso: f.fechaEgreso.value,
+                statusEgreso: f.statusEgreso.value,
+                diagnosticos: selectedDiagnosticos,
                 lastUpdatedBy: userId,
                 lastUpdatedAt: new Date().toISOString()
             };
 
             try {
                 if (editingPatientId) {
-                    // Actualizar paciente existente
-                    const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, editingPatientId);
-                    await updateDoc(patientRef, patientData);
-                    showToast("Paciente actualizado con éxito", "success");
+                    const ref = doc(db, `artifacts/${appId}/public/data/pacientes`, editingPatientId);
+                    await updateDoc(ref, data);
+                    showToast("Paciente actualizado");
                 } else {
-                    // Crear nuevo paciente
-                    patientData.createdAt = new Date().toISOString();
-                    patientData.createdBy = userId;
-                    await addDoc(pacientesCollectionRef, patientData);
-                    showToast("Paciente ingresado con éxito", "success");
+                    data.createdAt = new Date().toISOString();
+                    data.createdBy = userId;
+                    await addDoc(pacientesCollectionRef, data);
+                    showToast("Paciente ingresado");
                 }
-                
+
                 resetForm();
-                showView('consulta-view'); // Volver a la consulta
-                
+                showView("consulta-view");
             } catch (error) {
-                console.error("Error al guardar paciente:", error);
-                showToast("Error al guardar el paciente.", "error");
+                console.error(error);
+                showToast("Error al guardar", "error");
             } finally {
                 showLoading(false);
             }
         }
 
-        /** Limpia el formulario y el estado de edición */
         function resetForm() {
-            document.getElementById('patient-form').reset();
+            document.getElementById("patient-form").reset();
             editingPatientId = null;
             selectedDiagnosticos = [];
             updateSelectedDiagnosticosDisplay();
-            document.getElementById('form-title').textContent = "Ingreso de Nuevo Paciente";
-            document.getElementById('btn-submit-form').textContent = "Guardar Paciente";
-            document.getElementById('btn-cancelar-edicion').classList.add('hidden');
+
+            document.getElementById("form-title").textContent = "Ingreso de Nuevo Paciente";
+            document.getElementById("btn-submit-form").textContent = "Guardar Paciente";
+            document.getElementById("btn-cancelar-edicion").classList.add("hidden");
         }
-        
-        /** Carga los datos de un paciente en el formulario para editar */
+
         function loadPatientForEdit(id) {
-            const patient = allPacientes.find(p => p.id === id);
-            if (!patient) return;
+            const p = allPacientes.find(x => x.id === id);
+            if (!p) return;
 
-            showLoading(true, "Cargando para editar...");
+            const f = document.getElementById("patient-form");
 
-            const form = document.getElementById('patient-form');
-            form.nombre.value = patient.nombre || '';
-            form.fechaNacimiento.value = patient.fechaNacimiento || '';
-            form.peso.value = patient.peso || null;
-            form.edadGestacional.value = patient.edadGestacional || null;
-            form.procedencia.value = patient.procedencia || '';
-            form.fechaInternacion.value = patient.fechaInternacion || '';
-            form.fechaEgreso.value = patient.fechaEgreso || '';
-            form.statusEgreso.value = patient.statusEgreso || '';
+            f.nombre.value = p.nombre ?? "";
+            f.fechaNacimiento.value = p.fechaNacimiento ?? "";
+            f.peso.value = p.peso ?? "";
+            f.edadGestacional.value = p.edadGestacional ?? "";
+            f.procedencia.value = p.procedencia ?? "";
+            f.fechaInternacion.value = p.fechaInternacion ?? "";
+            f.fechaEgreso.value = p.fechaEgreso ?? "";
+            f.statusEgreso.value = p.statusEgreso ?? "";
 
-            // Cargar diagnósticos
-            selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+            selectedDiagnosticos = Array.isArray(p.diagnosticos) ? [...p.diagnosticos] : [];
             updateSelectedDiagnosticosDisplay();
 
-            // Actualizar UI del formulario
-            editingPatientId = patient.id;
-            document.getElementById('form-title').textContent = "Editando Paciente";
-            document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
-            document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
+            editingPatientId = p.id;
+            document.getElementById("form-title").textContent = "Editando Paciente";
+            document.getElementById("btn-submit-form").textContent = "Actualizar Paciente";
+            document.getElementById("btn-cancelar-edicion").classList.remove("hidden");
 
-            showLoading(false);
-            showView('ingreso-view'); // Cambiar a la vista de ingreso
+            showView("ingreso-view");
         }
 
-        /** Maneja el clic en los botones de la lista de pacientes */
         function handlePatientListClick(e) {
-            const button = e.target.closest('button'); // Buscar el botón más cercano
-            if (!button) return;
+            const btn = e.target.closest("button");
+            if (!btn) return;
 
-            const action = button.dataset.action;
-            const id = button.dataset.id;
-            const name = button.dataset.name;
+            const action = btn.dataset.action;
+            const id = btn.dataset.id;
+            const name = btn.dataset.name;
 
-            if (action === 'edit') {
+            if (action === "edit") {
                 loadPatientForEdit(id);
-            } else if (action === 'delete') {
+            } else if (action === "delete") {
                 patientToDeleteId = id;
                 showDeleteModal(true, name);
             }
         }
 
-        /** Confirma y ejecuta el borrado del paciente */
         async function confirmDeletePatient() {
             if (!patientToDeleteId) return;
-            
-            showLoading(true, "Borrando paciente...");
+
+            showLoading(true, "Borrando...");
+
             try {
-                const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
-                await deleteDoc(patientRef);
-                showToast("Paciente borrado con éxito", "success");
+                const ref = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
+                await deleteDoc(ref);
+                showToast("Paciente borrado");
             } catch (error) {
-                console.error("Error al borrar paciente:", error);
-                showToast("Error al borrar el paciente.", "error");
+                console.error(error);
+                showToast("Error al borrar", "error");
             } finally {
                 showDeleteModal(false);
                 showLoading(false);
-                // El onSnapshot actualizará la lista automáticamente
             }
         }
 
-        // --- LÓGICA DEL MODAL DE DIAGNÓSTICOS ---
+        // ===============================
+        //  DIAGNÓSTICOS
+        // ===============================
 
-        /** Actualiza la lista combinada de diagnósticos y el select de filtro */
         function updateAllDiagnosticosList() {
             allDiagnosticos = [...baseDiagnosticos, ...customDiagnosticos].sort();
-            
-            // Actualizar el <select> de filtro en la vista de consulta
-            const selectPatologia = document.getElementById('search-patologia');
-            // Guardar valor actual para restaurarlo
-            const currentValue = selectPatologia.value; 
-            
-            selectPatologia.innerHTML = '<option value="">-- Todas las Patologías --</option>'; // Opción por defecto
-            
-            allDiagnosticos.forEach(diag => {
-                const option = document.createElement('option');
-                option.value = diag;
-                option.textContent = diag;
-                selectPatologia.appendChild(option);
+
+            const s = document.getElementById("search-patologia");
+            const prev = s.value;
+
+            s.innerHTML = `<option value="">-- Todas las Patologías --</option>`;
+
+            allDiagnosticos.forEach(d => {
+                const o = document.createElement("option");
+                o.value = d;
+                o.textContent = d;
+                s.appendChild(o);
             });
-            
-            selectPatologia.value = currentValue; // Restaurar valor
+
+            s.value = prev;
         }
 
-        /** Renderiza la lista de checkboxes en el modal de diagnósticos */
         function renderDiagnosticoModalList() {
-            const listContainer = document.getElementById('diag-modal-list');
-            const filter = document.getElementById('diag-modal-search').value.toLowerCase();
-            
-            listContainer.innerHTML = ''; // Limpiar lista
-            
-            const diagnosToShow = allDiagnosticos.filter(d => d.toLowerCase().includes(filter));
-            
-            if (diagnosToShow.length === 0 && filter === '') {
-                listContainer.innerHTML = '<p class="text-gray-500">Cargando diagnósticos...</p>';
-                return;
-            }
+            const search = document.getElementById("diag-modal-search").value.toLowerCase();
+            const list = document.getElementById("diag-modal-list");
 
-            if (diagnosToShow.length === 0 && filter !== '') {
-                listContainer.innerHTML = `<p class="text-gray-500">No se encontraron diagnósticos para "${filter}".</p>`;
-                return;
-            }
+            list.innerHTML = "";
 
-            diagnosToShow.forEach(diag => {
-                const isChecked = selectedDiagnosticos.includes(diag);
-                const li = document.createElement('li');
-                li.classList.add('flex', 'items-center', 'p-2', 'hover:bg-gray-100', 'rounded-md');
-                li.innerHTML = `
-                    <label class="flex items-center w-full cursor-pointer">
-                        <input type="checkbox" 
-                               class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
-                               data-diag-name="${diag}" 
-                               ${isChecked ? 'checked' : ''}>
-                        <span class="ml-3 text-gray-700">${diag}</span>
-                    </label>
-                `;
-                
-                // Añadir listener al checkbox
-                li.querySelector('input').addEventListener('change', (e) => {
-                    const name = e.target.dataset.diagName;
-                    if (e.target.checked) {
-                        if (!selectedDiagnosticos.includes(name)) {
-                            selectedDiagnosticos.push(name);
+            allDiagnosticos
+                .filter(d => d.toLowerCase().includes(search))
+                .forEach(diag => {
+                    const item = document.createElement("label");
+                    item.className = "flex items-center gap-2 p-2 hover:bg-gray-100 rounded cursor-pointer";
+
+                    const cb = document.createElement("input");
+                    cb.type = "checkbox";
+                    cb.checked = selectedDiagnosticos.includes(diag);
+                    cb.addEventListener("change", () => {
+                        if (cb.checked) {
+                            selectedDiagnosticos.push(diag);
+                        } else {
+                            selectedDiagnosticos = selectedDiagnosticos.filter(x => x !== diag);
                         }
-                    } else {
-                        selectedDiagnosticos = selectedDiagnosticos.filter(d => d !== name);
-                    }
+                    });
+
+                    const span = document.createElement("span");
+                    span.textContent = diag;
+
+                    item.appendChild(cb);
+                    item.appendChild(span);
+                    list.appendChild(item);
                 });
-                
-                listContainer.appendChild(li);
-            });
         }
-        
-        /** Guarda los diagnósticos seleccionados del modal al formulario */
+
+        function addNewDiagnostico() {
+            const input = document.getElementById("diag-new-name");
+            const value = input.value.trim();
+
+            if (!value) {
+                showToast("Escribe un diagnóstico", "warning");
+                return;
+            }
+
+            addDoc(customDiagnosticosCollectionRef, { nombre: value })
+                .then(() => {
+                    input.value = "";
+                    showToast("Diagnóstico agregado");
+                })
+                .catch(err => {
+                    console.error(err);
+                    showToast("Error al agregar", "error");
+                });
+        }
+
         function saveDiagnosticosFromModal() {
-            // La variable global `selectedDiagnosticos` ya está actualizada por los listeners
             updateSelectedDiagnosticosDisplay();
             showDiagnosticoModal(false);
         }
-        
-        /** Actualiza el display de diagnósticos seleccionados en el formulario */
+
         function updateSelectedDiagnosticosDisplay() {
-            const container = document.getElementById('selected-diagnosticos-display');
-            if (selectedDiagnosticos.length === 0) {
-                container.innerHTML = '<p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>';
-            } else {
-                container.innerHTML = selectedDiagnosticos
-                    .map(d => `<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm font-medium mr-2 mb-2 px-2.5 py-0.5 rounded-full">${d}</span>`)
-                    .join('');
-            }
+            const cont = document.getElementById("selected-diagnosticos");
+            cont.innerHTML = selectedDiagnosticos.length
+                ? selectedDiagnosticos.map(d => `<span class="px-3 py-1 bg-blue-100 rounded-full">${d}</span>`).join(" ")
+                : `<span class="text-gray-500 text-sm">Ninguno seleccionado</span>`;
         }
 
-        /** Agrega un nuevo diagnóstico customizado a Firestore */
-        async function addNewDiagnostico() {
-            const input = document.getElementById('diag-modal-new-diag');
-            const newDiagName = input.value.trim();
-            
-            if (!newDiagName) {
-                showToast("Escriba un nombre para el diagnóstico", "warn");
-                return;
-            }
-            
-            if (allDiagnosticos.some(d => d.toLowerCase() === newDiagName.toLowerCase())) {
-                showToast("Ese diagnóstico ya existe", "warn");
-                return;
-            }
-            
-            // Guardar en Firestore
-            try {
-                await addDoc(customDiagnosticosCollectionRef, { nombre: newDiagName });
-                showToast("Diagnóstico agregado", "success");
-                input.value = '';
-                // El onSnapshot se encargará de recargar la lista
-                // y de seleccionar el nuevo
-                if (!selectedDiagnosticos.includes(newDiagName)) {
-                     selectedDiagnosticos.push(newDiagName);
-                }
-                // Re-renderizar la lista del modal
-                renderDiagnosticoModalList();
-            } catch (error) {
-                console.error("Error agregando diagnóstico:", error);
-                showToast("No se pudo agregar el diagnóstico", "error");
-            }
-        }
+        // ===============================
+        //  FILTROS
+        // ===============================
 
-        // --- LÓGICA DE CONSULTA Y FILTRADO ---
-
-        /** Aplica todos los filtros y renderiza la lista de pacientes */
         function applyFiltersAndRender() {
-            const searchTerm = document.getElementById('search-general').value.toLowerCase();
-            const dateStart = document.getElementById('search-date-start').value;
-            const dateEnd = document.getElementById('search-date-end').value;
-            const egStart = parseFloat(document.getElementById('search-eg-start').value);
-            const egEnd = parseFloat(document.getElementById('search-eg-end').value);
-            const patologiaFilter = document.getElementById('search-patologia').value;
+            const text = document.getElementById("search-general").value.toLowerCase();
+            const start = document.getElementById("search-date-start").value;
+            const end = document.getElementById("search-date-end").value;
+            const egStart = document.getElementById("search-eg-start").valueAsNumber;
+            const egEnd = document.getElementById("search-eg-end").valueAsNumber;
+            const pat = document.getElementById("search-patologia").value;
 
             filteredPacientes = allPacientes.filter(p => {
-                // 1. Filtro General (Nombre/Apellido)
-                if (searchTerm && !p.nombre.toLowerCase().includes(searchTerm)) {
-                    return false;
-                }
-                
-                // 2. Filtro Rango de Fechas (Nacimiento)
-                if (dateStart && p.fechaNacimiento < dateStart) return false;
-                if (dateEnd && p.fechaNacimiento > dateEnd) return false;
-                
-                // 3. Filtro Edad Gestacional (Rango)
-                if (egStart || egEnd) {
-                    if (!p.edadGestacional) return false; // Excluir si no tiene EG y se está filtrando
-                    const eg = parseFloat(p.edadGestacional);
-                    if (egStart && eg < egStart) return false;
-                    if (egEnd && eg > egEnd) return false;
-                }
-                
-                // 4. Filtro Patología
-                if (patologiaFilter && (!p.diagnosticos || !p.diagnosticos.includes(patologiaFilter))) {
-                    return false;
-                }
-                
-                return true; // Pasa todos los filtros
-            });
-            
-            // Renderizar la lista
-            renderPatientList(filteredPacientes);
-        }
+                const nameOk = p.nombre?.toLowerCase().includes(text) ?? false;
+                const dateOk = (!start || p.fechaNacimiento >= start) &&
+                               (!end || p.fechaNacimiento <= end);
 
-        /** Renderiza la lista de pacientes en la vista de consulta */
-        function renderPatientList(pacientes) {
-            const listContainer = document.getElementById('patient-list-container');
-            const counterEl = document.getElementById('patient-count');
-            
-            counterEl.textContent = `${pacientes.length} paciente(s) encontrado(s)`;
-            
-            if (pacientes.length === 0) {
-                listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No se encontraron pacientes que coincidan con la búsqueda.</p>';
-                return;
-            }
-            
-            // Crear el HTML de la lista/tabla
-            // Usar un div con `overflow-x-auto` para responsividad de la tabla
-            listContainer.innerHTML = `
-                <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-                    <table class="min-w-full divide-y divide-gray-200 bg-white">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">F. Nac.</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EG</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Procedencia</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Status Egreso</th>
-                                <th scope="col" class="relative px-6 py-3"><span class="sr-only">Acciones</span></th>
-                            </tr>
-                        </thead>
-                        <tbody class="divide-y divide-gray-200">
-                            ${pacientes.map(p => `
-                                <tr class="hover:bg-gray-50">
-                                    <td class="px-6 py-4 whitespace-nowrap">
-                                        <div class="text-sm font-medium text-gray-900">${p.nombre}</div>
-                                        <div class="text-sm text-gray-500 md:hidden">${p.fechaNacimiento || 'N/A'}</div>
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden sm:table-cell">${p.fechaNacimiento || 'N/A'}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.peso ? `${p.peso} gr` : 'N/A'}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.edadGestacional ? `${p.edadGestacional} sem` : 'N/A'}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">${p.procedencia || 'N/A'}</td>
-                                    <td class="px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                                        ${p.statusEgreso ? `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                            p.statusEgreso === 'Alta' ? 'bg-green-100 text-green-800' :
-                                            p.statusEgreso === 'Derivación' ? 'bg-yellow-100 text-yellow-800' :
-                                            p.statusEgreso === 'Obito' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
-                                        }">${p.statusEgreso}</span>` : '<span class="text-gray-400">Internado</span>'}
-                                    </td>
-                                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                        <button data-action="edit" data-id="${p.id}" class="text-blue-600 hover:text-blue-900" title="Editar">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                        </button>
-                                        <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-3" title="Borrar">
-                                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                        </button>
-                                    </td>
-                                </tr>
-                            `).join('')}
-                        </tbody>
-                    </table>
-                </div>
-            `;
-        }
+                const egOk = (!egStart || p.edadGestacional >= egStart) &&
+                             (!egEnd || p.edadGestacional <= egEnd);
 
-        // --- LÓGICA DE EXPORTACIÓN ---
+                const patOk = (!pat || (p.diagnosticos ?? []).includes(pat));
 
-        /** Exporta un array de datos a un archivo CSV */
-        function exportToCsv(dataToExport, filename) {
-            if (dataToExport.length === 0) {
-                showToast("No hay datos para exportar", "warn");
-                return;
-            }
-            
-            const headers = [
-                "ID", "Nombre", "Fecha Nacimiento", "Peso (gr)", "EG (sem)", "Procedencia", 
-                "Fecha Internación", "Fecha Egreso", "Status Egreso", "Diagnósticos"
-            ];
-            const csvRows = [headers.join(',')];
-
-            dataToExport.forEach(p => {
-                // Función para escapar comas y comillas en CSV
-                const escapeCSV = (val) => {
-                    if (val === undefined || val === null) return '';
-                    let str = String(val);
-                    if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                        str = `"${str.replace(/"/g, '""')}"`; // Escapar comillas dobles duplicándolas
-                    }
-                    return str;
-                };
-
-                const diagnosticosStr = Array.isArray(p.diagnosticos) ? p.diagnosticos.join('; ') : '';
-                
-                const values = [
-                    p.id,
-                    p.nombre,
-                    p.fechaNacimiento,
-                    p.peso,
-                    p.edadGestacional,
-                    p.procedencia,
-                    p.fechaInternacion,
-                    p.fechaEgreso,
-                    p.statusEgreso,
-                    diagnosticosStr
-                ].map(escapeCSV); // Aplicar escape a todos los valores
-                
-                csvRows.push(values.join(','));
+                return nameOk && dateOk && egOk && patOk;
             });
 
-            const csvString = csvRows.join('\n');
-            const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
-            const link = document.createElement('a');
+            renderPatientList();
+        }
+
+        function renderPatientList() {
+            const cont = document.getElementById("patient-list-container");
+            cont.innerHTML = "";
+
+            if (!filteredPacientes.length) {
+                cont.innerHTML = `<p class="text-gray-500 italic">No hay resultados.</p>`;
+                return;
+            }
+
+            filteredPacientes.forEach(p => {
+                const item = document.createElement("div");
+                item.className = "p-3 border rounded-lg bg-white shadow-sm flex justify-between items-center";
+
+                item.innerHTML = `
+                    <div>
+                        <p class="font-semibold">${p.nombre}</p>
+                        <p class="text-gray-600 text-sm">${p.fechaNacimiento} — EG: ${p.edadGestacional}</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="text-blue-600">Editar</button>
+                        <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600">Borrar</button>
+                    </div>
+                `;
+
+                cont.appendChild(item);
+            });
+        }
+
+        // ===============================
+        //  EXPORTAR CSV
+        // ===============================
+
+        function exportToCsv(rows, filename) {
+            if (!rows || !rows.length) {
+                showToast("Nada para exportar", "warning");
+                return;
+            }
+
+            const headers = Object.keys(rows[0]);
+            const csv = [
+                headers.join(","),
+                ...rows.map(r => headers.map(h => JSON.stringify(r[h] ?? "")).join(","))
+            ].join("\n");
+
+            const blob = new Blob([csv], { type: "text/csv" });
             const url = URL.createObjectURL(blob);
-            
-            link.setAttribute('href', url);
-            link.setAttribute('download', `${filename}.csv`);
-            link.style.visibility = 'hidden';
-            
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            showToast("Datos exportados", "success");
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = filename + ".csv";
+            a.click();
+
+            URL.revokeObjectURL(url);
+
+            showToast("Exportado");
         }
 
-        // --- DATOS (DIAGNÓSTICOS) ---
+        // ===============================
+        //  LISTA BASE DIAGNÓSTICOS
+        // ===============================
 
-        /** Popula la lista base de diagnósticos */
         function populateBaseDiagnosticos() {
-             baseDiagnosticos = [
-                "Taquipnea Transitoria del Recién Nacido (TTRN)", "Síndrome de Dificultad Respiratoria (SDR)", "Síndrome de Aspiración de Líquido Amniótico Meconial (SALAM)", 
-                "Hipertensión Pulmonar Persistente del Recién Nacido (HPPRN)", "Neumonía Neonatal Precoz", "Neumonía Neonatal Tardía", "Displasia Broncopulmonar (DBP)", 
-                "Apnea del Prematuro", "Neumotórax", "Hernia Diafragmática Congénita", "Atresia de Coanas", "Enfisema Lobar Congénito", "Malformación Adenomatosa Quística Pulmonar", 
-                "Hiperbilirrubinemia Neonatal", "Hipoglucemia Neonatal", "Hipocalcemia Neonatal", "Hipotermia Neonatal", "Inestabilidad Térmica", "Anemia del Prematuro", 
-                "Policitemia Neonatal", "Enfermedad Hemorrágica del Recién Nacido", "Trombocitopenia Neonatal Inmune", "Trombocitopenia Neonatal No Inmune", 
-                "Trastornos de la Coagulación Neonatal", "Hiponatremia", "Hipernatremia", "Hipomagnesemia", "Sospecha de Error Innato del Metabolismo", 
-                "Sospecha de Sepsis Neonatal Precoz", "Sepsis Neonatal Precoz Confirmada", "Sospecha de Sepsis Neonatal Tardía", "Sepsis Neonatal Tardía Confirmada", 
-                "Meningitis Neonatal", "Infección por Citomegalovirus (CMV) Congénito", "Infección por Herpes Simple (HSV) Neonatal", "Sífilis Congénita", 
-                "Toxoplasmosis Congénita", "Conjuntivitis Neonatal Química", "Conjuntivitis Neonatal Gonocócica", "Conjuntivitis Neonatal por Clamidia", "Onfalitis", 
-                "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales", 
-                "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV", 
-                "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia", 
-                "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
-                "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)", 
-                "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)", 
-                "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal", 
-                "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante", 
-                "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria", 
-                "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal", 
-                "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa", 
-                "Diarrea Neonatal Metabólica", "Deshidratación Neonatal", 
-                "Prematurez", // Diagnóstico consolidado
-                "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1", 
-                "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4", 
-                "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)", 
-                "Extremado Bajo Peso al Nacer (EBPN)", "Insuficiencia Renal Aguda (IRA) Neonatal", "Hidronefrosis Neonatal", "Reflujo Vesicoureteral", 
-                "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)", 
-                "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)", 
-                "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma", 
-                "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
-                "Hipotiroidismo Congénito"
-            ];
-            baseDiagnosticos.sort();
-        }
+            baseDiagnosticos = [
+                "RN sano",
+                "Prematuro",
+                "PEG",
+                "SDR",
+                "SAM",
+                "IC neonatal",
+                "Infección neonatal",
+                "Ictericia",
+                "Hipoglucemia",
+                "Convulsiones",
+                "Broncodisplasia",
+                "Cardiopatía congénita",
+                "Reflujo",
+                "Apnea"
+            ].sort();
 
+            updateAllDiagnosticosList();
+        }
     </script>
-
-    <!-- Estilos CSS personalizados (además de Tailwind) -->
-    <style>
-        /* Estilo para el scrollbar del modal (opcional pero recomendado) */
-        #diag-modal-list::-webkit-scrollbar {
-            width: 8px;
-        }
-        #diag-modal-list::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 10px;
-        }
-        #diag-modal-list::-webkit-scrollbar-thumb {
-            background: #cbd5e1; /* cool-gray-300 */
-            border-radius: 10px;
-        }
-        #diag-modal-list::-webkit-scrollbar-thumb:hover {
-            background: #94a3b8; /* cool-gray-400 */
-        }
-    </style>
 </head>
 
-<body class="bg-gray-100 font-sans antialiased">
+<body class="bg-gray-100">
 
-    <!-- Contenedor Principal -->
-    <div class="min-h-screen">
-        
-        <!-- Header -->
-        <header class="bg-white shadow-md">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <div class="flex justify-between items-center h-16">
-                    <div class="flex items-center">
-                        <svg class="h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-                        </svg>
-                        <h1 class="ml-3 text-2xl font-bold text-gray-800">NeoManager</h1>
-                        <span class="ml-2 text-sm font-medium text-gray-500 hidden sm:inline">Hosp. Carrillo - Neonatología</span>
-                    </div>
-                    <div class="text-xs text-gray-400" id="user-id-display">Conectando...</div>
-                </div>
-            </div>
-        </header>
+    <!-- HEADER -->
+    <header class="bg-blue-600 text-white p-4 shadow">
+        <h1 class="text-xl font-semibold">Neonatología Hospital Carrillo</h1>
+        <p id="user-id-display" class="text-sm opacity-80"></p>
+    </header>
 
-        <!-- Navegación por Pestañas -->
-        <div class="bg-white shadow-sm -mt-px">
-            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                <nav class="flex space-x-8 -mb-px">
-                    <button id="tab-ingreso" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
-                        Ingreso / Edición
-                    </button>
-                    <button id="tab-consulta" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
-                        Consulta y Búsqueda
-                    </button>
-                </nav>
-            </div>
-        </div>
+    <!-- PESTAÑAS -->
+    <nav class="flex border-b bg-white shadow-sm">
+        <button id="tab-ingreso" class="px-4 py-2 border-r text-blue-600 font-semibold border-b-2 border-blue-600">
+            Ingreso / Edición
+        </button>
+        <button id="tab-consulta" class="px-4 py-2 text-gray-600">
+            Consulta y Búsqueda
+        </button>
+    </nav>
 
-        <!-- Contenido Principal -->
-        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <!-- ==========================================
+         VISTA: INGRESO PACIENTE
+    =========================================== -->
+    <section id="ingreso-view" class="p-4 space-y-4">
+        <h2 id="form-title" class="text-lg font-semibold">Ingreso de Nuevo Paciente</h2>
 
-            <!-- ======================================================= -->
-            <!-- VISTA 1: INGRESO DE PACIENTES (Oculta por defecto)       -->
-            <!-- ======================================================= -->
-            <div id="ingreso-view" class="hidden">
-                <form id="patient-form" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
-                    <h2 id="form-title" class="text-2xl font-semibold text-gray-900 mb-6">Ingreso de Nuevo Paciente</h2>
-                    
-                    <!-- Datos Personales -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div class="md:col-span-2">
-                            <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
-                            <input type="text" id="nombre" name="nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" required>
-                        </div>
-                        
-                        <div>
-                            <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
-                            <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
-                        
-                        <div>
-                            <label for="procedencia" class="block text-sm font-medium text-gray-700">Procedencia</label>
-                            <select id="procedencia" name="procedencia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                                <option value="">Seleccionar...</option>
-                                <option value="Sala de partos">Sala de partos</option>
-                                <option value="Quirófano">Quirófano</option>
-                                <option value="Derivado">Derivado</option>
-                                <option value="Contrareferencia">Contrareferencia</option>
-                                <option value="Guardia">Guardia</option>
-                            </select>
-                        </div>
-                        
-                        <div>
-                            <label for="peso" class="block text-sm font-medium text-gray-700">Peso al Nacer (gramos)</label>
-                            <input type="number" id="peso" name="peso" placeholder="Ej: 2500" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
+        <form id="patient-form" class="space-y-4 bg-white p-4 rounded shadow">
 
-                        <div>
-                            <label for="edadGestacional" class="block text-sm font-medium text-gray-700">Edad Gestacional (semanas)</label>
-                            <input type="number" step="0.1" id="edadGestacional" name="edadGestacional" placeholder="Ej: 38.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
-                    </div>
-                    
-                    <!-- Datos de Internación -->
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
-                        <div>
-                            <label for="fechaInternacion" class="block text-sm font-medium text-gray-700">Fecha de Internación</label>
-                            <input type="date" id="fechaInternacion" name="fechaInternacion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
-                        
-                        <div>
-                            <label for="fechaEgreso" class="block text-sm font-medium text-gray-700">Fecha de Egreso</label>
-                            <input type="date" id="fechaEgreso" name="fechaEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
-
-                        <div class="md:col-span-2">
-                             <label for="statusEgreso" class="block text-sm font-medium text-gray-700">Status de Egreso</label>
-                            <select id="statusEgreso" name="statusEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                                <option value="">(Sin egreso)</option>
-                                <option value="Alta">Alta</option>
-                                <option value="Derivación">Derivación</option>
-                                <option value="Obito">Óbito</option>
-                            </select>
-                        </div>
-                    </div>
-                    
-                    <!-- Diagnósticos -->
-                    <div class="mt-6">
-                        <label class="block text-sm font-medium text-gray-700">Diagnósticos al Egreso</label>
-                        <div class="mt-2">
-                            <button type="button" id="btn-open-diag-modal" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                                Seleccionar Diagnósticos
-                            </button>
-                        </div>
-                        <div id="selected-diagnosticos-display" class="mt-4 p-3 bg-gray-50 rounded-md min-h-[50px] border border-gray-200">
-                            <p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>
-                        </div>
-                    </div>
-
-                    <!-- Botones de Acción -->
-                    <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
-                        <button type="button" id="btn-cancelar-edicion" class="hidden px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                            Cancelar
-                        </button>
-                        <button type="submit" id="btn-submit-form" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
-                            Guardar Paciente
-                        </button>
-                    </div>
-                </form>
+            <div>
+                <label class="block">Nombre y Apellido</label>
+                <input type="text" name="nombre" class="w-full p-2 border rounded">
             </div>
 
-            <!-- ======================================================= -->
-            <!-- VISTA 2: CONSULTA DE PACIENTES (Visible por defecto)   -->
-            <!-- ======================================================= -->
-            <div id="consulta-view">
-                <!-- Panel de Filtros -->
-                <div class="bg-white p-4 rounded-lg shadow-md mb-6">
-                    <div class="flex flex-col gap-4"> <!-- Contenedor principal de filtros cambiado a flex-col -->
-                        
-                        <!-- Fila 1: Filtro General -->
-                        <div>
-                            <label for="search-general" class="block text-sm font-medium text-gray-700">Buscar por Nombre y Apellido</label>
-                            <input type="text" id="search-general" placeholder="Escriba un nombre o apellido..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                        </div>
-                        
-                        <!-- Fila 2: Filtro Edad Gestacional (Rango) -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label for="search-eg-start" class="block text-sm font-medium text-gray-700">EG Desde (sem)</label>
-                                <input type="number" step="0.1" id="search-eg-start" placeholder="Ej: 30.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label for="search-eg-end" class="block text-sm font-medium text-gray-700">EG Hasta (sem)</label>
-                                <input type="number" step="0.1" id="search-eg-end" placeholder="Ej: 36" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                            </div>
-                        </div>
-
-                        <!-- Fila 3: Filtro Fecha Nacimiento -->
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label for="search-date-start" class="block text-sm font-medium text-gray-700">Nacidos desde</label>
-                                <input type="date" id="search-date-start" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                            </div>
-                            <div>
-                                <label for="search-date-end" class="block text-sm font-medium text-gray-700">Nacidos hasta</p>
-                                <input type="date" id="search-date-end" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                            </div>
-                        </div>
-                        
-                        <!-- Fila 4: Filtro Patología -->
-                        <div>
-                            <label for="search-patologia" class="block text-sm font-medium text-gray-700">Buscar por Patología</label>
-                            <select id="search-patologia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                                <option value="">-- Todas las Patologías --</option>
-                                <!-- Esta lista se poblará con JS -->
-                            </select>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Acciones (Exportar, Nuevo) -->
-                <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
-                    <div class="text-sm font-medium text-gray-700 mb-2 sm:mb-0" id="patient-count">
-                        Cargando pacientes...
-                    </div>
-                    <div class="flex space-x-3">
-                        <button id="btn-export-filtered" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            Exportar Filtrados
-                        </button>
-                        <button id="btn-export-all" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                            Exportar Todo
-                        </button>
-                        <button id="btn-nuevo-paciente" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                            Nuevo Paciente
-                        </button>
-                    </div>
-                </div>
-
-                <!-- Lista de Pacientes -->
-                <div id="patient-list-container">
-                    <!-- El contenido se genera con JS -->
-                    <p class="text-gray-500 text-center py-8">Cargando pacientes...</p>
-                </div>
+            <div>
+                <label class="block">Fecha de Nacimiento</label>
+                <input type="date" name="fechaNacimiento" class="w-full p-2 border rounded">
             </div>
 
-        </main>
-    </div>
-
-    <!-- ======================================================= -->
-    <!-- MODALES Y OVERLAYS (Ocultos por defecto)               -->
-    <!-- ======================================================= -->
-
-    <!-- Overlay de Carga -->
-    <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
-        <div class="flex flex-col items-center">
-            <svg class="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-            </svg>
-            <p id="loading-message" class="text-white text-lg mt-4">Cargando...</p>
-        </div>
-    </div>
-    
-    <!-- Notificación Toast -->
-    <div id="toast-notification" class="hidden opacity-0 transition-opacity duration-500 fixed bottom-5 right-5 w-auto max-w-sm p-4 rounded-lg shadow-lg text-white">
-        <p id="toast-message">Mensaje de notificación.</p>
-    </div>
-
-    <!-- Modal de Confirmación de Borrado -->
-    <div id="delete-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-40 p-4">
-        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-            <div class="flex items-start">
-                <div class="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
-                    <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-                </div>
-                <div class="ml-4 flex-1">
-                    <h3 class="text-lg font-medium text-gray-900">Confirmar Borrado</h3>
-                    <p class="mt-2 text-sm text-gray-500">
-                        ¿Estás seguro de que quieres borrar al paciente <strong id="delete-patient-name" class="font-medium text-gray-800"></strong>?
-                        Esta acción no se puede deshacer.
-                    </p>
-                </div>
+            <div>
+                <label class="block">Peso (g)</label>
+                <input type="number" name="peso" class="w-full p-2 border rounded">
             </div>
-            <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-                <button id="btn-confirm-delete" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
-                    Borrar
+
+            <div>
+                <label class="block">Edad Gestacional (semanas)</label>
+                <input type="number" name="edadGestacional" class="w-full p-2 border rounded">
+            </div>
+
+            <div>
+                <label class="block">Procedencia</label>
+                <select name="procedencia" class="w-full p-2 border rounded">
+                    <option value=""></option>
+                    <option value="Sala de Partos">Sala de Partos</option>
+                    <option value="Quirófano">Quirófano</option>
+                    <option value="Guardia">Guardia</option>
+                    <option value="Derivado">Derivado</option>
+                    <option value="Contrarreferencia">Contrarreferencia</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block">Fecha de Internación</label>
+                <input type="date" name="fechaInternacion" class="w-full p-2 border rounded">
+            </div>
+
+            <div>
+                <label class="block">Fecha de Egreso</label>
+                <input type="date" name="fechaEgreso" class="w-full p-2 border rounded">
+            </div>
+
+            <div>
+                <label class="block">Status de Egreso</label>
+                <select name="statusEgreso" class="w-full p-2 border rounded">
+                    <option value=""></option>
+                    <option value="Alta">Alta</option>
+                    <option value="Derivación">Derivación</option>
+                    <option value="Óbito">Óbito</option>
+                </select>
+            </div>
+
+            <!-- Diagnósticos -->
+            <div>
+                <label class="block">Diagnósticos</label>
+
+                <div id="selected-diagnosticos" class="mt-1 text-sm text-gray-600">
+                    Ninguno seleccionado
+                </div>
+
+                <button type="button" id="btn-open-diag-modal" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded">
+                    Seleccionar Diagnósticos
                 </button>
-                <button id="btn-cancel-delete" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+            </div>
+
+            <!-- BOTONES -->
+            <div class="flex gap-2 pt-4">
+                <button id="btn-submit-form" type="submit" class="px-4 py-2 bg-blue-600 text-white rounded shadow">
+                    Guardar Paciente
+                </button>
+
+                <button id="btn-cancelar-edicion" class="px-4 py-2 bg-gray-300 text-gray-700 rounded shadow hidden">
                     Cancelar
                 </button>
             </div>
+
+        </form>
+    </section>
+
+    <!-- ==========================================
+         VISTA: CONSULTA Y BÚSQUEDA
+    =========================================== -->
+    <section id="consulta-view" class="p-4 space-y-4 hidden">
+
+        <h2 class="text-lg font-semibold">Consultar Pacientes</h2>
+
+        <!-- FILTROS -->
+        <div class="bg-white p-4 rounded shadow space-y-3">
+            <input id="search-general" type="text" placeholder="Buscar por nombre"
+                   class="w-full p-2 border rounded">
+
+            <div class="flex gap-2">
+                <div class="flex-1">
+                    <label class="block text-sm">Nacidos desde</label>
+                    <input id="search-date-start" type="date" class="w-full p-2 border rounded">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-sm">Nacidos hasta</label>
+                    <input id="search-date-end" type="date" class="w-full p-2 border rounded">
+                </div>
+            </div>
+
+            <div class="flex gap-2">
+                <div class="flex-1">
+                    <label class="block text-sm">EG desde</label>
+                    <input id="search-eg-start" type="number" class="w-full p-2 border rounded">
+                </div>
+                <div class="flex-1">
+                    <label class="block text-sm">EG hasta</label>
+                    <input id="search-eg-end" type="number" class="w-full p-2 border rounded">
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-sm">Patología</label>
+                <select id="search-patologia" class="w-full p-2 border rounded">
+                    <option value="">-- Todas las Patologías --</option>
+                </select>
+            </div>
+
+        </div>
+
+        <!-- BOTONES -->
+        <div class="flex gap-2">
+            <button id="btn-export-filtered" class="px-4 py-2 bg-blue-600 text-white rounded shadow">
+                Exportar Filtrados
+            </button>
+            <button id="btn-export-all" class="px-4 py-2 bg-gray-500 text-white rounded shadow">
+                Exportar Todo
+            </button>
+            <button id="btn-nuevo-paciente" class="px-4 py-2 bg-green-600 text-white rounded shadow ml-auto">
+                Nuevo Paciente
+            </button>
+        </div>
+
+        <!-- LISTA PACIENTES -->
+        <div id="patient-list-container" class="space-y-2"></div>
+
+    </section>
+
+    <!-- ==========================================
+         MODAL: DIAGNÓSTICOS
+    =========================================== -->
+    <div id="diagnostico-modal" class="fixed inset-0 bg-black/40 hidden flex items-center justify-center p-4">
+        <div class="bg-white w-full max-w-lg p-4 rounded shadow space-y-3">
+
+            <div class="flex justify-between items-center">
+                <h3 class="text-lg font-semibold">Seleccionar Diagnósticos</h3>
+                <button id="btn-close-diag-modal" class="text-gray-600">Cerrar</button>
+            </div>
+
+            <input id="diag-modal-search" type="text" placeholder="Filtrar diagnósticos..." 
+                   class="w-full p-2 border rounded">
+
+            <div id="diag-modal-list" class="max-h-64 overflow-auto border rounded p-2 bg-gray-50"></div>
+
+            <div>
+                <input id="diag-new-name" type="text" placeholder="Agregar diagnóstico nuevo"
+                       class="w-full p-2 border rounded">
+                <button id="btn-add-new-diag" class="mt-2 px-3 py-1 bg-green-600 text-white rounded">
+                    Agregar nuevo
+                </button>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button id="btn-save-diag-modal" class="px-4 py-2 bg-blue-600 text-white rounded">
+                    Guardar selección
+                </button>
+            </div>
+
         </div>
     </div>
-    
-    <!-- Modal de Selección de Diagnósticos -->
-    <div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-30 p-4">
-        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full h-[90vh] flex flex-col">
-            <!-- Header del Modal -->
-            <div class="flex justify-between items-center p-4 border-b border-gray-200">
-                <h3 class="text-xl font-semibold text-gray-900">Seleccionar Diagnósticos</h3>
-                <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600">
-                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-                </button>
-            </div>
-            
-            <!-- Contenido del Modal -->
-            <div class="p-4 flex-grow overflow-y-hidden flex flex-col">
-                <!-- Filtro y Agregar Nuevo -->
-                <div class="mb-4">
-                    <input type="text" id="diag-modal-search" placeholder="Buscar diagnóstico..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                </div>
-                <div class="flex space-x-2 mb-4">
-                    <input type="text" id="diag-modal-new-diag" placeholder="Agregar nuevo diagnóstico..." class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                    <button id="btn-add-new-diag" class="flex-shrink-0 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
-                        Agregar
-                    </button>
-                </div>
-                
-                <!-- Lista de Diagnósticos (con scroll) -->
-                <div class="flex-grow overflow-y-auto" style="max-height: calc(90vh - 250px);"> <!-- Ajustar altura máxima -->
-                    <ul id="diag-modal-list" class="space-y-1">
-                        <!-- Checkboxes generados por JS -->
-                    </ul>
-                </div>
-            </div>
-            
-            <!-- Footer del Modal -->
-            <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
-                <button id="btn-save-diag-modal" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                    Guardar Selección
-                </button>
+
+    <!-- ==========================================
+         MODAL: CONFIRMAR BORRADO
+    =========================================== -->
+    <div id="delete-modal" class="fixed inset-0 bg-black/40 hidden flex items-center justify-center p-4">
+        <div class="bg-white p-4 rounded shadow w-full max-w-md space-y-3">
+            <h3 class="text-lg font-semibold">Confirmar borrado</h3>
+            <p>¿Seguro deseas borrar a <strong id="delete-patient-name"></strong>?</p>
+
+            <div class="flex justify-end gap-2 pt-2">
+                <button id="btn-cancel-delete" class="px-4 py-2 bg-gray-300 rounded">Cancelar</button>
+                <button id="btn-confirm-delete" class="px-4 py-2 bg-red-600 text-white rounded">Borrar</button>
             </div>
         </div>
+    </div>
+
+    <!-- ==========================================
+         OVERLAY LOADING
+    =========================================== -->
+    <div id="loading-overlay" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center">
+        <div class="bg-white px-4 py-2 rounded shadow text-center">
+            <p id="loading-message" class="font-semibold">Cargando...</p>
+        </div>
+    </div>
+
+    <!-- TOAST -->
+    <div id="toast-notification"
+         class="fixed bottom-4 right-4 px-4 py-2 rounded text-white shadow hidden opacity-0 transition">
+        <span id="toast-message"></span>
     </div>
 
 </body>
