@@ -7,121 +7,261 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
     <script nomodule src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
-    <script type="module">
-        // Importar las funciones necesarias de Firebase
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { 
-            getAuth, 
-            signInAnonymously, 
-            signInWithCustomToken, 
-            onAuthStateChanged 
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { 
-            getFirestore, 
-            doc, 
-            addDoc, 
-            setDoc, 
-            updateDoc, 
-            deleteDoc, 
-            onSnapshot,
-            getDocs,           // <-- MODIFICADO: Agregado
-            getCountFromServer, // <-- MODIFICADO: Agregado
-            collection, 
-            query,
-            where,             // <-- MODIFICADO: Agregado
-            setLogLevel
-        } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+    
+    <script src="app.js" type="module" defer></script>
 
-        // --- VARIABLES GLOBALES ---
-        let app, auth, db, userId, appId;
-        let pacientesCollectionRef, customDiagnosticosCollectionRef;
+    <style>
+        #diag-modal-list::-webkit-scrollbar { width: 8px; }
+        #diag-modal-list::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        #diag-modal-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        #diag-modal-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+</head>
+
+<body class="bg-gray-100 font-sans antialiased">
+
+    <div class="min-h-screen">
         
-        let filteredPacientes = []; // Pacientes que coinciden con los filtros
-        let totalPatientCount = 0; // <-- MODIFICADO: Variable para guardar el conteo total
-        let baseDiagnosticos = []; // La lista larga de diagnósticos
-        let customDiagnosticos = []; // Diagnósticos agregados por usuarios
-        let allDiagnosticos = []; // Lista combinada
-        
-        let selectedDiagnosticos = []; // Diagnósticos seleccionados en el modal
-        let editingPatientId = null; // ID del paciente que se está editando
-        let patientToDeleteId = null; // ID del paciente a borrar
+        <header class="bg-white shadow-md">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <div class="flex justify-between items-center h-16">
+                    <div class="flex items-center">
+                        <svg class="h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
+                        </svg>
+                        <h1 class="ml-3 text-2xl font-bold text-gray-800">Neo Carrillo</h1>
+                        <span class="ml-2 text-sm font-medium text-gray-500 hidden sm:inline">Hosp. Carrillo - Neonatología</span>
+                    </div>
+                    <div class="text-xs text-gray-400" id="user-id-display">Conectando...</div>
+                </div>
+            </div>
+        </header>
 
-        // --- CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE!) ---
-        const firebaseConfig = {
-            apiKey: "AIzaSyApnwRZQklxTBLhwBBIoyAcCiBAgzyhtvE",
-            authDomain: "neomanager-a4482.firebaseapp.com",
-            projectId: "neomanager-a4482",
-            storageBucket: "neomanager-a4482.firebasestorage.app",
-            messagingSenderId: "574188152831",
-            appId: "1:574188152831:web:34ab797c5b709e7e3429ca"
-        };
-        appId = typeof __app_id !== 'undefined' ? __app_id : 'neo-manager-default';
-        
-        // --- INICIALIZACIÓN DE LA APP ---
-        
-        document.addEventListener('DOMContentLoaded', () => {
-            // Inicializar Firebase
-            app = initializeApp(firebaseConfig);
-            db = getFirestore(app);
-            auth = getAuth(app);
-            setLogLevel('Debug'); // Mostrar logs detallados de Firestore
+        <div class="bg-white shadow-sm -mt-px">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+                <nav class="flex space-x-8 -mb-px">
+                    <button id="tab-ingreso" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
+                        Ingreso / Edición
+                    </button>
+                    <button id="tab-consulta" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
+                        Consulta y Búsqueda
+                    </button>
+                </nav>
+            </div>
+        </div>
 
-            // Llenar la lista base de diagnósticos
-            populateBaseDiagnosticos();
-            
-            // Configurar listeners de la UI
-            setupUIListeners();
-            
-            // Iniciar autenticación
-            handleAuth();
-        });
+        <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
-        // --- MANEJO DE AUTENTICACIÓN Y DATOS ---
-
-        function handleAuth() {
-            showLoading(true, "Autenticando...");
-            onAuthStateChanged(auth, async (user) => {
-                if (user) {
-                    userId = user.uid;
-                    console.log("Usuario autenticado:", userId);
-                    document.getElementById('user-id-display').textContent = `ID de Usuario: ${userId}`;
-
-                    // Definir rutas de la base de datos (colaborativas)
-                    const publicDataPath = `artifacts/${appId}/public/data`;
-                    pacientesCollectionRef = collection(db, `${publicDataPath}/pacientes`);
-                    customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
+            <div id="ingreso-view" class="hidden">
+                <form id="patient-form" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
+                    <h2 id="form-title" class="text-2xl font-semibold text-gray-900 mb-6">Ingreso de Nuevo Paciente</h2>
                     
-                    // Cargar datos
-                    loadCustomDiagnosticos(); // Cargar diagnósticos custom
-                    updateTotalPatientCount(); // <-- MODIFICADO: Cargar el conteo total
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="md:col-span-2">
+                            <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
+                            <input type="text" id="nombre" name="nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" required>
+                        </div>
+                        <div>
+                            <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
+                            <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="procedencia" class="block text-sm font-medium text-gray-700">Procedencia</label>
+                            <select id="procedencia" name="procedencia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">Seleccionar...</option>
+                                <option value="Sala de partos">Sala de partos</option>
+                                <option value="Quirófano">Quirófano</option>
+                                <option value="Derivado">Derivado</option>
+                                <option value="Contrareferencia">Contrareferencia</option>
+                                <option value="Guardia">Guardia</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label for="peso" class="block text-sm font-medium text-gray-700">Peso al Nacer (gramos)</label>
+                            <input type="number" id="peso" name="peso" placeholder="Ej: 2500" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="edadGestacional" class="block text-sm font-medium text-gray-700">Edad Gestacional (semanas)</label>
+                            <input type="number" step="0.1" id="edadGestacional" name="edadGestacional" placeholder="Ej: 38.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                    </div>
                     
-                    showLoading(false);
-                    showView('ingreso-view'); // Empezar en la vista de ingreso
-                } else {
-                    // Si no hay usuario, intentar loguearse
-                    try {
-                        if (typeof __initial_auth_token !== 'undefined') {
-                            await signInWithCustomToken(auth, __initial_auth_token);
-                        } else {
-                            await signInAnonymously(auth);
-                        }
-                    } catch (error) {
-                        console.error("Error de autenticación:", error);
-                        showLoading(false);
-                        showToast("Error de autenticación. La app no funcionará.", 'error');
-                    }
-                }
-            });
-        }
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                        <div>
+                            <label for="fechaInternacion" class="block text-sm font-medium text-gray-700">Fecha de Internación</label>
+                            <input type="date" id="fechaInternacion" name="fechaInternacion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div>
+                            <label for="fechaEgreso" class="block text-sm font-medium text-gray-700">Fecha de Egreso</label>
+                            <input type="date" id="fechaEgreso" name="fechaEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div class="md:col-span-2">
+                             <label for="statusEgreso" class="block text-sm font-medium text-gray-700">Status de Egreso</label>
+                            <select id="statusEgreso" name="statusEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">(Sin egreso)</option>
+                                <option value="Alta">Alta</option>
+                                <option value="Derivación">Derivación</option>
+                                <option value="Obito">Óbito</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mt-6">
+                        <label class="block text-sm font-medium text-gray-700">Diagnósticos al Egreso</label>
+                        <div class="mt-2">
+                            <button type="button" id="btn-open-diag-modal" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
+                                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                Seleccionar Diagnósticos
+                            </button>
+                        </div>
+                        <div id="selected-diagnosticos-display" class="mt-4 p-3 bg-gray-50 rounded-md min-h-[50px] border border-gray-200">
+                            <p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>
+                        </div>
+                    </div>
 
-        /** (NUEVA) Actualiza el contador total de pacientes desde Firestore */
-        async function updateTotalPatientCount() {
-            try {
-                const snapshot = await getCountFromServer(pacientesCollectionRef);
-                totalPatientCount = snapshot.data().count;
-                // Actualizar el texto en la UI (si la vista de consulta está activa)
-                const counterEl = document.getElementById('patient-count');
-                if (counterEl && !document.getElementById('consulta-view').classList.contains('hidden')) {
-                     // Llama a renderPatientList para actualizar el contador con la data filtrada actual
-                     renderPatientList(filteredPacientes, filteredPacientes.length > 0);
-                }
+                    <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
+                        <button type="button" id="btn-cancelar-edicion" class="hidden px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
+                            Cancelar
+                        </button>
+                        <button type="submit" id="btn-submit-form" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                            Guardar Paciente
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <div id="consulta-view">
+                <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+                    <div class="flex flex-col gap-4">
+                        <div>
+                            <label for="search-general" class="block text-sm font-medium text-gray-700">Buscar por Nombre y Apellido</label>
+                            <input type="text" id="search-general" placeholder="Escriba un nombre o apellido..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="search-eg-start" class="block text-sm font-medium text-gray-700">EG Desde (sem)</label>
+                                <input type="number" step="0.1" id="search-eg-start" placeholder="Ej: 30.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="search-eg-end" class="block text-sm font-medium text-gray-700">EG Hasta (sem)</label>
+                                <input type="number" step="0.1" id="search-eg-end" placeholder="Ej: 36" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label for="search-date-start" class="block text-sm font-medium text-gray-700">Nacidos desde</label>
+                                <input type="date" id="search-date-start" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                            <div>
+                                <label for="search-date-end" class="block text-sm font-medium text-gray-700">Nacidos hasta</label>
+                                <input type="date" id="search-date-end" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label for="search-patologia" class="block text-sm font-medium text-gray-700">Buscar por Patología</label>
+                            <select id="search-patologia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                                <option value="">-- Todas las Patologías --</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
+                    <div class="text-sm font-medium text-gray-700 mb-2 sm:mb-0" id="patient-count">
+                        Cargando pacientes...
+                    </div>
+                    <div class="flex space-x-3">
+                        <button id="btn-export-filtered" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Exportar Filtrados
+                        </button>
+                        <button id="btn-export-all" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
+                            <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                            Exportar Búsqueda
+                        </button>
+                        <button id="btn-nuevo-paciente" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                            Nuevo Paciente
+                        </button>
+                    </div>
+                </div>
+
+                <div id="patient-list-container">
+                    <p class="text-gray-500 text-center py-8">Cargando pacientes...</p>
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
+        <div class="flex flex-col items-center">
+            <svg class="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+            </svg>
+            <p id="loading-message" class="text-white text-lg mt-4">Cargando...</p>
+        </div>
+    </div>
+    
+    <div id="toast-notification" class="hidden opacity-0 transition-opacity duration-500 fixed bottom-5 right-5 w-auto max-w-sm p-4 rounded-lg shadow-lg text-white">
+        <p id="toast-message">Mensaje de notificación.</p>
+    </div>
+
+    <div id="delete-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-40 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
+            <div class="flex items-start">
+                <div class="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
+                    <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                </div>
+                <div class="ml-4 flex-1">
+                    <h3 class="text-lg font-medium text-gray-900">Confirmar Borrado</h3>
+                    <p class="mt-2 text-sm text-gray-500">
+                        ¿Estás seguro de que quieres borrar al paciente <strong id="delete-patient-name" class="font-medium text-gray-800"></strong>?
+                        Esta acción no se puede deshacer.
+                    </p>
+                </div>
+            </div>
+            <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
+                <button id="btn-confirm-delete" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
+                    Borrar
+                </button>
+                <button id="btn-cancel-delete" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
+                    Cancelar
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-30 p-4">
+        <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full h-[90vh] flex flex-col">
+            <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                <h3 class="text-xl font-semibold text-gray-900">Seleccionar Diagnósticos</h3>
+                <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div class="p-4 flex-grow overflow-y-hidden flex flex-col">
+                <div class="mb-4">
+                    <input type="text" id="diag-modal-search" placeholder="Buscar diagnóstico..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                </div>
+                <div class="flex space-x-2 mb-4">
+                    <input type="text" id="diag-modal-new-diag" placeholder="Agregar nuevo diagnóstico..." class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    <button id="btn-add-new-diag" class="flex-shrink-0 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
+                        Agregar
+                    </button>
+                </div>
+                <div class="flex-grow overflow-y-auto" style="max-height: calc(90vh - 250px);">
+                    <ul id="diag-modal-list" class="space-y-1"></ul>
+                </div>
+            </div>
+            <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
+                <button id="btn-save-diag-modal" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
+                    Guardar Selección
+                </button>
+            </div>
+        </div>
+    </div>
+
+</body>
+</html>
