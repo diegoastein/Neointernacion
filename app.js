@@ -56,7 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
     auth = getAuth(app);
     setLogLevel('Debug'); // Mostrar logs detallados de Firestore
 
-    // (La migración de diagnósticos ya se hizo, ahora cargamos desde Firestore)
+    // Llenar la lista base de diagnósticos (MODO ANTIGUO, NO MIGRADO)
+    populateBaseDiagnosticos();
     
     // Configurar listeners de la UI
     setupUIListeners();
@@ -81,7 +82,7 @@ function handleAuth() {
             customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
             
             // Cargar datos
-            await loadBaseDiagnosticos(); // Cargar diagnósticos base desde Firestore
+            // No se llama a loadBaseDiagnosticos() porque no migramos
             loadCustomDiagnosticos(); // Cargar diagnósticos custom
             updateTotalPatientCount(); // Cargar el conteo total
             
@@ -174,15 +175,13 @@ function setupUIListeners() {
     document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
     document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
 
-    // ===== BOTONES DE EXPORTACIÓN MODIFICADOS =====
+    // Botones de Exportación (Nombres de ID están invertidos en el HTML, pero la lógica sigue al texto)
     
-    // "Exportar Todo" -> Llama a la nueva función que descarga todo
+    // "Exportar Todo" (ID: btn-export-filtered)
     document.getElementById('btn-export-filtered').addEventListener('click', handleExportAll); 
     
-    // "Exportar Filtrados" -> Llama a la función simple con los datos ya filtrados
+    // "Exportar Filtrados" (ID: btn-export-all)
     document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrados'));
-    
-    // ===============================================
     
     // Clic en la lista de pacientes (para editar/borrar)
     document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
@@ -727,7 +726,6 @@ function exportToCsv(dataToExport, filename) {
     showToast("Datos exportados", "success");
 }
 
-// ===== NUEVA FUNCIÓN PARA EXPORTAR TODO =====
 /** Exporta TODOS los pacientes de la base de datos */
 async function handleExportAll() {
     showLoading(true, "Exportando todos los pacientes...");
@@ -759,22 +757,40 @@ async function handleExportAll() {
 
 // --- DATOS (DIAGNÓSTICOS) ---
 
-/** Carga la lista base de diagnósticos desde Firestore */
-async function loadBaseDiagnosticos() {
-    // Definimos la ruta a la nueva colección
-    const baseDiagCollectionRef = collection(db, `artifacts/${appId}/public/data/diagnosticos_base`);
-    
-    try {
-        const querySnapshot = await getDocs(baseDiagCollectionRef);
-        baseDiagnosticos = querySnapshot.docs.map(doc => doc.data().nombre).sort();
-        
-        console.log("Diagnósticos base cargados desde Firestore:", baseDiagnosticos.length);
-        
-        // Una vez cargados, actualizamos la lista combinada
-        updateAllDiagnosticosList();
-        
-    } catch (error) {
-        console.error("Error al cargar diagnósticos base:", error);
-        showToast("Error crítico al cargar diagnósticos base", "error");
-    }
+/** Popula la lista base de diagnósticos (MODO ANTIGUO) */
+function populateBaseDiagnosticos() {
+     baseDiagnosticos = [
+        "Taquipnea Transitoria del Recién Nacido (TTRN)", "Síndrome de Dificultad Respiratoria (SDR)", "Síndrome de Aspiración de Líquido Amniótico Meconial (SALAM)", 
+        "Hipertensión Pulmonar Persistente del Recién Nacido (HPPRN)", "Neumonía Neonatal Precoz", "Neumonía Neonatal Tardía", "Displasia Broncopulmonar (DBP)", 
+        "Apnea del Prematuro", "Neumotórax", "Hernia Diafragmática Congénita", "Atresia de Coanas", "Enfisema Lobar Congénito", "Malformación Adenomatosa Quística Pulmonar", 
+        "Hiperbilirrubinemia Neonatal", "Hipoglucemia Neonatal", "Hipocalcemia Neonatal", "Hipotermia Neonatal", "Inestabilidad Térmica", "Anemia del Prematuro", 
+        "Policitemia Neonatal", "Enfermedad Hemorrágica del Recién Nacido", "Trombocitopenia Neonatal Inmune", "Trombocitopenia Neonatal No Inmune", 
+        "Trastornos de la Coagulación Neonatal", "Hiponatremia", "Hipernatremia", "Hipomagnesemia", "Sospecha de Error Innato del Metabolismo", 
+        "Sospecha de Sepsis Neonatal Precoz", "Sepsis Neonatal Precoz Confirmada", "Sospecha de Sepsis Neonatal Tardía", "Sepsis Neonatal Tardía Confirmada", 
+        "Meningitis Neonatal", "Infección por Citomegalovirus (CMV) Congénito", "Infección por Herpes Simple (HSV) Neonatal", "Sífilis Congénita", 
+        "Toxoplasmosis Congénita", "Conjuntivitis Neonatal Química", "Conjuntivitis Neonatal Gonocócica", "Conjuntivitis Neonatal por Clamidia", "Onfalitis", 
+        "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales", 
+        "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV", 
+        "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia", 
+        "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
+        "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)", 
+        "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)", 
+        "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal", 
+        "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante", 
+        "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria", 
+        "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal", 
+        "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa", 
+        "Diarrea Neonatal Metabólica", "Deshidratación Neonatal", 
+        "Prematurez", // Diagnóstico consolidado
+        "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1", 
+        "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4", 
+        "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)", 
+        "Extremado Bajo Peso al Nacer (EBPN)", "Insuficiencia Renal Aguda (IRA) Neonatal", "Hidronefrosis Neonatal", "Reflujo Vesicoureteral", 
+        "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)", 
+        "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)", 
+        "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma", 
+        "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
+        "Hipotiroidismo Congénito"
+    ];
+    baseDiagnosticos.sort();
 }
