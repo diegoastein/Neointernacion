@@ -19,8 +19,8 @@ import {
     collection, 
     query,
     where,
-    orderBy, // <-- NUEVO
-    limit,   // <-- NUEVO
+    orderBy,
+    limit,
     setLogLevel
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     auth = getAuth(app);
     setLogLevel('Debug'); // Mostrar logs detallados de Firestore
 
-    // Llenar la lista base de diagnósticos
+    // Llenar la lista base de diagnósticos (MODO ANTIGUO, NO MIGRADO)
     populateBaseDiagnosticos();
     
     // Configurar listeners de la UI
@@ -84,11 +84,11 @@ function handleAuth() {
             customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
             
             // Cargar datos
-            loadCustomDiagnosticos();
-            updateTotalPatientCount();
+            loadCustomDiagnosticos(); // Cargar diagnósticos custom
+            updateTotalPatientCount(); // Cargar el conteo total
             
             // Cargar los últimos pacientes por defecto para la vista inicial
-            applyFiltersAndRender(); // Esto cargará los últimos 3 porque no hay filtros
+            applyFiltersAndRender(); 
             
             showLoading(false);
             showView('ingreso-view'); // Empezar en la vista de ingreso
@@ -187,7 +187,7 @@ function setupUIListeners() {
     document.getElementById('btn-export-filtered').addEventListener('click', handleExportAll); 
     document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrados'));
     
-    // Clic en la lista de pacientes (para editar/borrar)
+    // Clic en la lista de pacientes (para editar/borrar/compartir)
     document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
 }
 
@@ -377,8 +377,64 @@ function handlePatientListClick(e) {
     } else if (action === 'delete') {
         patientToDeleteId = id;
         showDeleteModal(true, name);
+    } else if (action === 'share') { // <-- NUEVO: Manejo del botón Compartir
+        const patient = filteredPacientes.find(p => p.id === id);
+        if (patient) {
+            sharePatientSummary(patient);
+        } else {
+             showToast("Error: No se encontró el paciente para compartir.", "error");
+        }
     }
 }
+
+/** Genera el resumen del paciente y lo copia al portapapeles. */
+function sharePatientSummary(patient) {
+    const summary = `
+--- FICHA NEONATOLOGÍA ---
+Paciente: ${patient.nombre || 'N/A'}
+F. Nacimiento: ${patient.fechaNacimiento || 'N/A'}
+Edad Gestacional: ${patient.edadGestacional ? `${patient.edadGestacional} sem` : 'N/A'}
+Peso: ${patient.peso ? `${patient.peso} gr` : 'N/A'}
+Procedencia: ${patient.procedencia || 'N/A'}
+
+F. Internación: ${patient.fechaInternacion || 'N/A'}
+F. Egreso: ${patient.fechaEgreso || 'N/A'}
+Status Egreso: ${patient.statusEgreso || 'Internado'}
+
+Diagnósticos:
+- ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0
+    ? patient.diagnosticos.join('\n- ')
+    : 'Ninguno registrado'}
+    
+ID Interno: ${patient.id || 'N/A'}
+`;
+
+    // Copiar el texto al portapapeles
+    // Usamos el método 'execCommand' como alternativa robusta en iframes
+    const textarea = document.createElement('textarea');
+    textarea.value = summary;
+    textarea.style.position = 'fixed'; // Para evitar desplazamiento
+    textarea.style.opacity = 0;
+    document.body.appendChild(textarea);
+    textarea.focus();
+    textarea.select();
+    
+    try {
+        const successful = document.execCommand('copy');
+        if (successful) {
+            showToast(`Ficha de ${patient.nombre} copiada al portapapeles.`, 'success');
+        } else {
+             showToast("Error: No se pudo copiar el texto. Intente manualmente.", 'warn');
+        }
+    } catch (err) {
+        console.error('Error al intentar copiar:', err);
+        showToast("Error: El navegador no permite copiar automáticamente.", 'error');
+    } finally {
+        document.body.removeChild(textarea);
+    }
+}
+
+// ... (Resto de las funciones de UI, Modales y Lógica de Diagnósticos) ...
 
 /** Confirma y ejecuta el borrado del paciente */
 async function confirmDeletePatient() {
@@ -632,7 +688,7 @@ function renderPatientList(pacientes, hasFilter) {
         // Caso búsqueda activa
         counterEl.textContent = `Total ingresados: ${total} paciente(s). Coinciden con la búsqueda: ${pacientes.length}`;
     } else {
-        // Caso vista por defecto
+        // Caso vista por defecto (últimos 3)
         if (pacientes.length > 0) {
             counterEl.textContent = `Total ingresados: ${total}. Mostrando los últimos ${pacientes.length} ingresos.`;
         } else {
@@ -684,11 +740,14 @@ function renderPatientList(pacientes, hasFilter) {
                                     p.statusEgreso === 'Obito' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
                                 }">${p.statusEgreso}</span>` : '<span class="text-gray-400">Internado</span>'}
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end space-x-2">
+                                <button data-action="share" data-id="${p.id}" data-name="${p.nombre}" class="text-gray-500 hover:text-blue-500" title="Compartir Ficha">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684L12 12l-3.316-1.342m0 2.684a2 2 0 110-2.684m0 2.684c.245.485.49 1.485.49 2.073 0 1.054-1.127 1.472-2.316 1.472s-2.316-.418-2.316-1.472c0-.588.245-1.588.49-2.073m4.632 0h.442c.749 0 1.51.326 2.014.946l3.65 4.542a1.865 1.865 0 01-1.077 2.628L10 20l-1.92-2.421a1.865 1.865 0 01-1.077-2.628l3.65-4.542a1.865 1.865 0 012.014-.946z"/></svg>
+                                </button>
                                 <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="text-blue-600 hover:text-blue-900" title="Editar">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
                                 </button>
-                                <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-3" title="Borrar">
+                                <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-1" title="Borrar">
                                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
                                 </button>
                             </td>
