@@ -19,6 +19,8 @@ import {
     collection, 
     query,
     where,
+    orderBy, // <-- NUEVO
+    limit,   // <-- NUEVO
     setLogLevel
 } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
@@ -26,7 +28,7 @@ import {
 let app, auth, db, userId, appId;
 let pacientesCollectionRef, customDiagnosticosCollectionRef;
 
-let filteredPacientes = []; // Pacientes que coinciden con los filtros
+let filteredPacientes = []; // Pacientes que coinciden con los filtros (o los últimos 3)
 let totalPatientCount = 0; // Variable para guardar el conteo total
 let baseDiagnosticos = []; // La lista larga de diagnósticos
 let customDiagnosticos = []; // Diagnósticos agregados por usuarios
@@ -56,7 +58,7 @@ document.addEventListener('DOMContentLoaded', () => {
     auth = getAuth(app);
     setLogLevel('Debug'); // Mostrar logs detallados de Firestore
 
-    // Llenar la lista base de diagnósticos (MODO ANTIGUO, NO MIGRADO)
+    // Llenar la lista base de diagnósticos
     populateBaseDiagnosticos();
     
     // Configurar listeners de la UI
@@ -82,9 +84,11 @@ function handleAuth() {
             customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
             
             // Cargar datos
-            // No se llama a loadBaseDiagnosticos() porque no migramos
-            loadCustomDiagnosticos(); // Cargar diagnósticos custom
-            updateTotalPatientCount(); // Cargar el conteo total
+            loadCustomDiagnosticos();
+            updateTotalPatientCount();
+            
+            // Cargar los últimos pacientes por defecto para la vista inicial
+            applyFiltersAndRender(); // Esto cargará los últimos 3 porque no hay filtros
             
             showLoading(false);
             showView('ingreso-view'); // Empezar en la vista de ingreso
@@ -110,15 +114,15 @@ async function updateTotalPatientCount() {
     try {
         const snapshot = await getCountFromServer(pacientesCollectionRef);
         totalPatientCount = snapshot.data().count;
-        // Actualizar el texto en la UI (si la vista de consulta está activa)
+        // Actualizar el texto en la UI si corresponde
         const counterEl = document.getElementById('patient-count');
         if (counterEl && !document.getElementById('consulta-view').classList.contains('hidden')) {
-             // Llama a renderPatientList para actualizar el contador con la data filtrada actual
-             renderPatientList(filteredPacientes, filteredPacientes.length > 0);
+             // Llama a renderPatientList para actualizar el texto
+             renderPatientList(filteredPacientes, false);
         }
     } catch (error) {
         console.error("Error al obtener el conteo total:", error);
-        showToast("No se pudo cargar el total de pacientes", "error");
+        // No mostramos toast aquí para no ser molestos en el inicio
     }
 }
 
@@ -140,7 +144,11 @@ function loadCustomDiagnosticos() {
 function setupUIListeners() {
     // Pestañas
     document.getElementById('tab-ingreso').addEventListener('click', () => showView('ingreso-view'));
-    document.getElementById('tab-consulta').addEventListener('click', () => showView('consulta-view'));
+    document.getElementById('tab-consulta').addEventListener('click', () => {
+        showView('consulta-view');
+        // Al cambiar a la pestaña de consulta, refrescamos la lista (cargará últimos 3 si no hay filtro)
+        applyFiltersAndRender();
+    });
     
     // Botón "Nuevo Paciente" (en vista consulta)
     document.getElementById('btn-nuevo-paciente').addEventListener('click', () => {
@@ -175,12 +183,8 @@ function setupUIListeners() {
     document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
     document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
 
-    // Botones de Exportación (Nombres de ID están invertidos en el HTML, pero la lógica sigue al texto)
-    
-    // "Exportar Todo" (ID: btn-export-filtered)
+    // Botones de Exportación
     document.getElementById('btn-export-filtered').addEventListener('click', handleExportAll); 
-    
-    // "Exportar Filtrados" (ID: btn-export-all)
     document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrados'));
     
     // Clic en la lista de pacientes (para editar/borrar)
@@ -208,7 +212,7 @@ function showView(viewId) {
         tabIngreso.classList.add('text-gray-500');
         tabConsulta.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
         tabConsulta.classList.remove('text-gray-500');
-        renderPatientList(filteredPacientes, false);
+        // El renderizado se hace en setupUIListeners o al cargar la app
     }
 }
 
@@ -307,7 +311,7 @@ async function handleFormSubmit(e) {
             await updateDoc(patientRef, patientData);
             showToast("Paciente actualizado con éxito", "success");
         } else {
-            patientData.createdAt = new Date().toISOString();
+            patientData.createdAt = new Date().toISOString(); // Este campo se usa para ordenar los "últimos"
             patientData.createdBy = userId;
             await addDoc(pacientesCollectionRef, patientData);
             updateTotalPatientCount();
@@ -316,6 +320,8 @@ async function handleFormSubmit(e) {
         
         resetForm();
         showView('consulta-view');
+        // Forzamos recarga de la lista para ver el nuevo
+        applyFiltersAndRender();
         
     } catch (error) {
         console.error("Error al guardar paciente:", error);
@@ -535,14 +541,30 @@ async function applyFiltersAndRender() {
         !isNaN(egStart) || !isNaN(egEnd) ||
         patologiaFilter;
 
-    // Si no hay filtros, no mostrar nada
+    // Si no hay filtros, CARGAR LOS ÚLTIMOS 3 INGRESOS
     if (!hasFilters) {
-        filteredPacientes = [];
-        renderPatientList(filteredPacientes, false);
+        showLoading(true, "Cargando últimos ingresos...");
+        try {
+            // Consulta: Ordenar por fecha de creación (descendente) y limitar a 3
+            const q = query(pacientesCollectionRef, orderBy("createdAt", "desc"), limit(3));
+            const querySnapshot = await getDocs(q);
+            
+            filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+            
+            // Renderizar (false indica que no es un filtro de búsqueda activa)
+            renderPatientList(filteredPacientes, false);
+        } catch (error) {
+            console.error("Error cargando últimos pacientes:", error);
+            // Si falla (ej: falta índice o campo createdAt), mostramos lista vacía
+            filteredPacientes = [];
+            renderPatientList([], false);
+        } finally {
+            showLoading(false);
+        }
         return;
     }
 
-    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA
+    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA DE FILTROS
     showLoading(true, "Buscando...");
     
     const qConstraints = []; 
@@ -607,15 +629,26 @@ function renderPatientList(pacientes, hasFilter) {
     const total = totalPatientCount || 0;
 
     if (hasFilter) {
+        // Caso búsqueda activa
         counterEl.textContent = `Total ingresados: ${total} paciente(s). Coinciden con la búsqueda: ${pacientes.length}`;
     } else {
-        counterEl.textContent = `Total ingresados: ${total} paciente(s). Use los filtros para buscar.`;
+        // Caso vista por defecto
+        if (pacientes.length > 0) {
+            counterEl.textContent = `Total ingresados: ${total}. Mostrando los últimos ${pacientes.length} ingresos.`;
+        } else {
+            counterEl.textContent = `Total ingresados: ${total} paciente(s). Use los filtros para buscar.`;
+        }
     }
     
-    if (!pacientes || pacientes.length === 0) {
-        listContainer.innerHTML = hasFilter
-            ? '<p class="text-gray-500 text-center py-8">No se encontraron pacientes que coincidan con la búsqueda.</p>'
-            : '<p class="text-gray-500 text-center py-8">Use los filtros de arriba para realizar una búsqueda.</p>';
+    // Si no hay pacientes y NO es la vista por defecto con últimos ingresos
+    if ((!pacientes || pacientes.length === 0) && hasFilter) {
+        listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No se encontraron pacientes que coincidan con la búsqueda.</p>';
+        return;
+    }
+    
+    // Si no hay pacientes y ES la vista por defecto (ej: base de datos vacía o error)
+    if ((!pacientes || pacientes.length === 0) && !hasFilter) {
+        listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">Use los filtros de arriba para realizar una búsqueda.</p>';
         return;
     }
     
