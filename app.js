@@ -377,7 +377,7 @@ function calculateAndRenderStats(pacientes) {
     }
 }
 
-// --- LOGICA MODALES Y FORMULARIOS (Resto de funciones igual) ---
+// --- LOGICA MODALES Y FORMULARIOS ---
 
 function showDiagnosticoModal(show) {
     const modal = document.getElementById('diagnostico-modal');
@@ -807,10 +807,37 @@ async function handleExportAll() {
 
 function populateBaseDiagnosticos() {
     baseDiagnosticos = [
-       "Taquipnea Transitoria (TTRN)", "SDR / Membrana Hialina", "SALAM", "Hipertensión Pulmonar (HPPRN)", 
-       "Neumonía", "Displasia Broncopulmonar", "Apnea", "Neumotórax", "Sepsis Precoz", "Sepsis Tardía", 
-       "Hipoglucemia", "Hiperbilirrubinemia", "Anemia", "Policitemia", "EHI / Asfixia", "Convulsiones", 
-       "HIV", "Sifilis Congénita", "CMV", "Toxoplasmosis", "Cardiopatía Congénita", "Prematurez", 
-       "RCIU", "PEG", "Bajo Peso (BPN)", "Muy Bajo Peso (MBPN)", "Extremado Bajo Peso (EBPN)"
-   ].sort();
+        "Taquipnea Transitoria del Recién Nacido (TTRN)", "Síndrome de Dificultad Respiratoria (SDR)", "Síndrome de Aspiración de Líquido Amniótico Meconial (SALAM)",
+        "Hipertensión Pulmonar Persistente del Recién Nacido (HPPRN)", "Neumonía Neonatal Precoz", "Neumonía Neonatal Tardía", "Displasia Broncopulmonar (DBP)",
+        "Apnea del Prematuro", "Neumotórax", "Hernia Diafragmática Congénita", "Atresia de Coanas", "Enfisema Lobar Congénito", "Malformación Adenomatosa Quística Pulmonar",
+        "Hiperbilirrubinemia Neonatal", "Hipoglucemia Neonatal", "Hipocalcemia Neonatal", "Hipotermia Neonatal", "Inestabilidad Térmica", "Anemia del Prematuro",
+        "Policitemia Neonatal", "Enfermedad Hemorrágica del Recién Nacido", "Trombocitopenia Neonatal Inmune", "Trombocitopenia Neonatal No Inmune",
+        "Trastornos de la Coagulación Neonatal", "Hiponatremia", "Hipernatremia", "Hipomagnesemia", "Sospecha de Error Innato del Metabolismo",
+        "Sospecha de Sepsis Neonatal Precoz", "Sepsis Neonatal Precoz Confirmada", "Sospecha de Sepsis Neonatal Tardía", "Sepsis Neonatal Tardía Confirmada",
+        "Meningitis Neonatal", "Infección por Citomegalovirus (CMV) Congénito", "Infección por Herpes Simple (HSV) Neonatal", "Sífilis Congénita",
+        "Toxoplasmosis Congénita", "Conjuntivitis Neonatal Química", "Conjuntivitis Neonatal Gonocócica", "Conjuntivitis Neonatal por Clamidia", "Onfalitis",
+        "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales",
+        "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV",
+        "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia",
+        "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal",
+        "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)",
+        "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)",
+        "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal",
+        "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante",
+        "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria",
+        "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal",
+        "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa",
+        "Diarrea Neonatal Metabólica", "Deshidratación Neonatal",
+        "Prematurez", // Diagnóstico consolidado
+        "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1",
+        "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4",
+        "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)",
+        "Extremado Bajo Peso al Nacer (EBPN)", "Insuficiencia Renal Aguda (IRA) Neonatal", "Hidronefrosis Neonatal", "Reflujo Vesicoureteral",
+        "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)",
+        "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)",
+        "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma",
+        "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita",
+        "Hipotiroidismo Congénito"
+    ];
+    baseDiagnosticos.sort();
 }
