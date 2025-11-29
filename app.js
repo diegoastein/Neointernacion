@@ -28,17 +28,20 @@ import {
 let app, auth, db, userId, appId;
 let pacientesCollectionRef, customDiagnosticosCollectionRef;
 
-let filteredPacientes = []; // Pacientes que coinciden con los filtros (o los últimos 3)
-let totalPatientCount = 0; // Variable para guardar el conteo total
-let baseDiagnosticos = []; // La lista larga de diagnósticos
-let customDiagnosticos = []; // Diagnósticos agregados por usuarios
-let allDiagnosticos = []; // Lista combinada
+let filteredPacientes = []; 
+let totalPatientCount = 0; 
+let baseDiagnosticos = []; 
+let customDiagnosticos = []; 
+let allDiagnosticos = []; 
 
-let selectedDiagnosticos = []; // Diagnósticos seleccionados en el modal
-let editingPatientId = null; // ID del paciente que se está editando
-let patientToDeleteId = null; // ID del paciente a borrar
+let selectedDiagnosticos = []; 
+let editingPatientId = null; 
+let patientToDeleteId = null; 
 
-// --- CONFIGURACIÓN DE FIREBASE (¡IMPORTANTE!) ---
+// Variable para la suscripción del Dashboard
+let unsubscribeDashboard = null;
+
+// --- CONFIGURACIÓN DE FIREBASE ---
 const firebaseConfig = {
     apiKey: "AIzaSyApnwRZQklxTBLhwBBIoyAcCiBAgzyhtvE",
     authDomain: "neomanager-a4482.firebaseapp.com",
@@ -52,48 +55,42 @@ appId = typeof __app_id !== 'undefined' ? __app_id : 'neo-manager-default';
 // --- INICIALIZACIÓN DE LA APP ---
 
 document.addEventListener('DOMContentLoaded', () => {
-    // Inicializar Firebase
     app = initializeApp(firebaseConfig);
     db = getFirestore(app);
     auth = getAuth(app);
-    setLogLevel('Debug'); // Mostrar logs detallados de Firestore
+    setLogLevel('Debug'); 
 
-    // Llenar la lista base de diagnósticos (MODO ANTIGUO, NO MIGRADO)
     populateBaseDiagnosticos();
-    
-    // Configurar listeners de la UI
     setupUIListeners();
-    
-    // Iniciar autenticación
     handleAuth();
 });
 
-// --- MANEJO DE AUTENTICACIÓN Y DATOS ---
+// --- MANEJO DE AUTENTICACIÓN ---
 
 function handleAuth() {
-    showLoading(true, "Autenticando...");
+    showLoading(true, "Conectando...");
     onAuthStateChanged(auth, async (user) => {
         if (user) {
             userId = user.uid;
             console.log("Usuario autenticado:", userId);
-            document.getElementById('user-id-display').textContent = `ID de Usuario: ${userId}`;
+            const userDisplay = document.getElementById('user-id-display');
+            if(userDisplay) userDisplay.textContent = `ID: ${userId.substring(0,6)}...`;
 
-            // Definir rutas de la base de datos (colaborativas)
             const publicDataPath = `artifacts/${appId}/public/data`;
             pacientesCollectionRef = collection(db, `${publicDataPath}/pacientes`);
             customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
             
-            // Cargar datos
-            loadCustomDiagnosticos(); // Cargar diagnósticos custom
-            updateTotalPatientCount(); // Cargar el conteo total
+            loadCustomDiagnosticos(); 
+            updateTotalPatientCount(); 
             
-            // Cargar los últimos pacientes por defecto para la vista inicial
+            // Inicializar Dashboard con fecha actual
+            initDashboard();
+
+            // Cargar vista por defecto
             applyFiltersAndRender(); 
-            
             showLoading(false);
-            showView('ingreso-view'); // Empezar en la vista de ingreso
+            showView('ingreso-view'); 
         } else {
-            // Si no hay usuario, intentar loguearse
             try {
                 if (typeof __initial_auth_token !== 'undefined') {
                     await signInWithCustomToken(auth, __initial_auth_token);
@@ -103,60 +100,59 @@ function handleAuth() {
             } catch (error) {
                 console.error("Error de autenticación:", error);
                 showLoading(false);
-                showToast("Error de autenticación. La app no funcionará.", 'error');
+                showToast("Error de autenticación.", 'error');
             }
         }
     });
 }
 
-/** Actualiza el contador total de pacientes desde Firestore */
 async function updateTotalPatientCount() {
     try {
         const snapshot = await getCountFromServer(pacientesCollectionRef);
         totalPatientCount = snapshot.data().count;
-        // Actualizar el texto en la UI si corresponde
         const counterEl = document.getElementById('patient-count');
         if (counterEl && !document.getElementById('consulta-view').classList.contains('hidden')) {
-             // Llama a renderPatientList para actualizar el texto
              renderPatientList(filteredPacientes, false);
         }
     } catch (error) {
         console.error("Error al obtener el conteo total:", error);
-        // No mostramos toast aquí para no ser molestos en el inicio
     }
 }
 
-/** Carga y escucha los diagnósticos customizados */
 function loadCustomDiagnosticos() {
     onSnapshot(query(customDiagnosticosCollectionRef), (snapshot) => {
         customDiagnosticos = snapshot.docs.map(doc => doc.data().nombre).sort();
-        console.log("Diagnósticos customizados cargados:", customDiagnosticos.length);
         updateAllDiagnosticosList();
     }, (error) => {
         console.error("Error al cargar diagnósticos custom:", error);
-        showToast("Error al cargar lista de diagnósticos.", 'error');
     });
 }
 
-// --- MANEJO DE LA UI (VISTAS, MODALES, ETC) ---
+// --- MANEJO DE UI ---
 
-/** Configura todos los event listeners de la UI */
 function setupUIListeners() {
     // Pestañas
     document.getElementById('tab-ingreso').addEventListener('click', () => showView('ingreso-view'));
     document.getElementById('tab-consulta').addEventListener('click', () => {
         showView('consulta-view');
-        // Al cambiar a la pestaña de consulta, refrescamos la lista (cargará últimos 3 si no hay filtro)
         applyFiltersAndRender();
     });
-    
-    // Botón "Nuevo Paciente" (en vista consulta)
+    document.getElementById('tab-dashboard').addEventListener('click', () => {
+        showView('dashboard-view');
+        updateDashboardStats(); // Forzar actualización al entrar
+    });
+
+    // Botones
     document.getElementById('btn-nuevo-paciente').addEventListener('click', () => {
         resetForm();
         showView('ingreso-view');
     });
 
-    // Formulario de Ingreso
+    // Dashboard Selectors
+    document.getElementById('dash-month').addEventListener('change', updateDashboardStats);
+    document.getElementById('dash-year').addEventListener('change', updateDashboardStats);
+
+    // Formularios
     document.getElementById('patient-form').addEventListener('submit', handleFormSubmit);
     document.getElementById('btn-cancelar-edicion').addEventListener('click', (e) => {
         e.preventDefault();
@@ -164,18 +160,17 @@ function setupUIListeners() {
         showView('consulta-view');
     });
 
-    // Modal de Diagnósticos
+    // Modales
     document.getElementById('btn-open-diag-modal').addEventListener('click', () => showDiagnosticoModal(true));
     document.getElementById('btn-close-diag-modal').addEventListener('click', () => showDiagnosticoModal(false));
     document.getElementById('btn-save-diag-modal').addEventListener('click', saveDiagnosticosFromModal);
     document.getElementById('diag-modal-search').addEventListener('input', renderDiagnosticoModalList);
     document.getElementById('btn-add-new-diag').addEventListener('click', addNewDiagnostico);
     
-    // Modal de Borrado
     document.getElementById('btn-cancel-delete').addEventListener('click', () => showDeleteModal(false));
     document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeletePatient);
 
-    // Filtros de Búsqueda (se activan al cambiar)
+    // Filtros
     document.getElementById('search-general').addEventListener('input', applyFiltersAndRender);
     document.getElementById('search-date-start').addEventListener('change', applyFiltersAndRender);
     document.getElementById('search-date-end').addEventListener('change', applyFiltersAndRender);
@@ -183,77 +178,207 @@ function setupUIListeners() {
     document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
     document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
 
-    // Botones de Exportación
-    document.getElementById('btn-export-filtered').addEventListener('click', handleExportAll); 
-    document.getElementById('btn-export-all').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_filtrados'));
+    // Exportar
+    document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_vista'));
+    document.getElementById('btn-export-all').addEventListener('click', handleExportAll); 
     
-    // Clic en la lista de pacientes (para editar/borrar/compartir)
+    // Acciones tabla
     document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
 }
 
-/** Cambia entre la vista de 'Ingreso' y 'Consulta' */
 function showView(viewId) {
-    const ingresoView = document.getElementById('ingreso-view');
-    const consultaView = document.getElementById('consulta-view');
-    const tabIngreso = document.getElementById('tab-ingreso');
-    const tabConsulta = document.getElementById('tab-consulta');
+    const views = ['ingreso-view', 'consulta-view', 'dashboard-view'];
+    const tabs = ['tab-ingreso', 'tab-consulta', 'tab-dashboard'];
 
-    if (viewId === 'ingreso-view') {
-        ingresoView.classList.remove('hidden');
-        consultaView.classList.add('hidden');
-        tabIngreso.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
-        tabIngreso.classList.remove('text-gray-500');
-        tabConsulta.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
-        tabConsulta.classList.add('text-gray-500');
-    } else {
-        ingresoView.classList.add('hidden');
-        consultaView.classList.remove('hidden');
-        tabIngreso.classList.remove('border-b-2', 'border-blue-500', 'text-blue-600');
-        tabIngreso.classList.add('text-gray-500');
-        tabConsulta.classList.add('border-b-2', 'border-blue-500', 'text-blue-600');
-        tabConsulta.classList.remove('text-gray-500');
-        // El renderizado se hace en setupUIListeners o al cargar la app
-    }
+    // Ocultar todas las vistas y desactivar pestañas
+    views.forEach((v, idx) => {
+        const el = document.getElementById(v);
+        const tab = document.getElementById(tabs[idx]);
+        
+        if (v === viewId) {
+            el.classList.remove('hidden');
+            tab.classList.add('active');
+            tab.classList.remove('inactive');
+        } else {
+            el.classList.add('hidden');
+            tab.classList.remove('active');
+            tab.classList.add('inactive');
+        }
+    });
 }
 
-/** Muestra u oculta el overlay de carga */
 function showLoading(show, message = "Cargando...") {
     const overlay = document.getElementById('loading-overlay');
     const messageEl = document.getElementById('loading-message');
     if (show) {
-        messageEl.textContent = message;
+        if(messageEl) messageEl.textContent = message;
         overlay.classList.remove('hidden');
     } else {
         overlay.classList.add('hidden');
     }
 }
 
-/** Muestra un mensaje temporal (toast) */
 function showToast(message, type = 'success') {
     const toast = document.getElementById('toast-notification');
     const toastMessage = document.getElementById('toast-message');
     
     toastMessage.textContent = message;
     
-    toast.classList.remove('bg-green-500', 'bg-red-500', 'bg-yellow-500');
+    toast.className = "fixed bottom-5 right-5 max-w-sm w-full bg-white border-l-4 p-4 rounded shadow-lg flex items-center transition-all duration-500 z-50 transform";
     
     if (type === 'success') {
-        toast.classList.add('bg-green-500');
+        toast.classList.add('border-green-500');
+        toastMessage.classList.add('text-green-700');
     } else if (type === 'error') {
-        toast.classList.add('bg-red-500');
+        toast.classList.add('border-red-500');
+        toastMessage.classList.add('text-red-700');
     } else {
-        toast.classList.add('bg-yellow-500');
+        toast.classList.add('border-yellow-500');
+        toastMessage.classList.add('text-yellow-700');
     }
     
-    toast.classList.remove('hidden', 'opacity-0');
+    toast.classList.remove('hidden', 'translate-y-10', 'opacity-0');
     
     setTimeout(() => {
-        toast.classList.add('opacity-0');
+        toast.classList.add('translate-y-10', 'opacity-0');
         setTimeout(() => toast.classList.add('hidden'), 500);
     }, 3000);
 }
 
-/** Muestra u oculta el modal de diagnósticos */
+// --- LOGICA DASHBOARD ---
+
+function initDashboard() {
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth() + 1; // JS months are 0-indexed
+
+    // Llenar selector de años (Actual - 2 hasta Actual + 2)
+    const yearSelect = document.getElementById('dash-year');
+    yearSelect.innerHTML = '';
+    for (let y = currentYear - 2; y <= currentYear + 2; y++) {
+        const opt = document.createElement('option');
+        opt.value = y;
+        opt.textContent = y;
+        if (y === currentYear) opt.selected = true;
+        yearSelect.appendChild(opt);
+    }
+
+    // Setear mes actual
+    document.getElementById('dash-month').value = currentMonth;
+
+    // Iniciar listener
+    updateDashboardStats();
+}
+
+function updateDashboardStats() {
+    const month = parseInt(document.getElementById('dash-month').value);
+    const year = parseInt(document.getElementById('dash-year').value);
+
+    let startStr, endStr;
+
+    if (month === 0) {
+        // Año Completo
+        startStr = `${year}-01-01`;
+        endStr = `${year}-12-31`;
+    } else {
+        // Mes Específico
+        startStr = `${year}-${String(month).padStart(2, '0')}-01`;
+        const lastDay = new Date(year, month, 0).getDate();
+        endStr = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
+    }
+
+    console.log(`Actualizando Dashboard para: ${startStr} al ${endStr}`);
+
+    // Cancelar suscripción anterior si existe
+    if (unsubscribeDashboard) {
+        unsubscribeDashboard();
+    }
+
+    // Usar 'fechaInternacion' como criterio principal para "Ingresos del periodo"
+    const q = query(
+        pacientesCollectionRef, 
+        where("fechaInternacion", ">=", startStr),
+        where("fechaInternacion", "<=", endStr)
+    );
+
+    unsubscribeDashboard = onSnapshot(q, (snapshot) => {
+        const pacientes = snapshot.docs.map(doc => doc.data());
+        calculateAndRenderStats(pacientes);
+    }, (error) => {
+        console.error("Error en Dashboard:", error);
+    });
+}
+
+function calculateAndRenderStats(pacientes) {
+    // 1. Contadores Básicos
+    const total = pacientes.length;
+    const altas = pacientes.filter(p => p.statusEgreso === 'Alta').length;
+    const obitos = pacientes.filter(p => p.statusEgreso === 'Obito').length;
+    const derivaciones = pacientes.filter(p => p.statusEgreso === 'Derivación').length;
+
+    document.getElementById('stat-ingresos').textContent = total;
+    document.getElementById('stat-altas').textContent = altas;
+    document.getElementById('stat-obitos').textContent = obitos;
+    document.getElementById('stat-derivaciones').textContent = derivaciones;
+
+    // 2. Promedios (Peso y EG)
+    let sumPeso = 0;
+    let countPeso = 0;
+    let sumEG = 0;
+    let countEG = 0;
+    let allDiags = [];
+
+    pacientes.forEach(p => {
+        if (p.peso && !isNaN(p.peso)) {
+            sumPeso += Number(p.peso);
+            countPeso++;
+        }
+        if (p.edadGestacional && !isNaN(p.edadGestacional)) {
+            sumEG += Number(p.edadGestacional);
+            countEG++;
+        }
+        if (Array.isArray(p.diagnosticos)) {
+            allDiags.push(...p.diagnosticos);
+        }
+    });
+
+    const avgPeso = countPeso > 0 ? Math.round(sumPeso / countPeso) : '-';
+    const avgEG = countEG > 0 ? (sumEG / countEG).toFixed(1) : '-';
+
+    document.getElementById('stat-avg-peso').textContent = avgPeso;
+    document.getElementById('stat-avg-eg').textContent = avgEG;
+
+    // 3. Top 5 Diagnósticos
+    const diagCounts = {};
+    allDiags.forEach(d => {
+        diagCounts[d] = (diagCounts[d] || 0) + 1;
+    });
+
+    // Convertir a array, ordenar y tomar top 5
+    const sortedDiags = Object.entries(diagCounts)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 5);
+
+    const listEl = document.getElementById('stat-top-diag');
+    listEl.innerHTML = '';
+    
+    if (sortedDiags.length === 0) {
+        listEl.innerHTML = '<li class="italic text-gray-400">Sin datos registrados</li>';
+    } else {
+        sortedDiags.forEach(([name, count]) => {
+            const li = document.createElement('li');
+            li.className = "flex justify-between items-center border-b border-gray-100 pb-1 last:border-0";
+            li.innerHTML = `
+                <span class="truncate pr-2">${name}</span>
+                <span class="bg-blue-100 text-blue-800 text-xs font-semibold px-2 py-0.5 rounded-full">${count}</span>
+            `;
+            listEl.appendChild(li);
+        });
+    }
+}
+
+// --- LOGICA MODALES Y FORMULARIOS (Resto de funciones igual) ---
+
 function showDiagnosticoModal(show) {
     const modal = document.getElementById('diagnostico-modal');
     if (show) {
@@ -265,7 +390,6 @@ function showDiagnosticoModal(show) {
     }
 }
 
-/** Muestra u oculta el modal de confirmación de borrado */
 function showDeleteModal(show, patientName = '') {
     const modal = document.getElementById('delete-modal');
     if (show) {
@@ -277,22 +401,18 @@ function showDeleteModal(show, patientName = '') {
     }
 }
 
-// --- LÓGICA DEL FORMULARIO DE INGRESO ---
-
-/** Maneja el envío del formulario (Crear o Actualizar) */
 async function handleFormSubmit(e) {
     e.preventDefault();
     showLoading(true, "Guardando...");
 
     const form = e.target;
     
-    // Lógica Nivel Pro para crear las palabras clave
     const nombreOriginal = form.nombre.value;
     const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
 
     const patientData = {
         nombre: nombreOriginal,
-        nombre_keywords: keywords, // Campo "Nivel Pro" para buscar
+        nombre_keywords: keywords, 
         fechaNacimiento: form.fechaNacimiento.value,
         peso: form.peso.valueAsNumber,
         edadGestacional: form.edadGestacional.valueAsNumber,
@@ -309,40 +429,37 @@ async function handleFormSubmit(e) {
         if (editingPatientId) {
             const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, editingPatientId);
             await updateDoc(patientRef, patientData);
-            showToast("Paciente actualizado con éxito", "success");
+            showToast("Paciente actualizado", "success");
         } else {
-            patientData.createdAt = new Date().toISOString(); // Este campo se usa para ordenar los "últimos"
+            patientData.createdAt = new Date().toISOString(); 
             patientData.createdBy = userId;
             await addDoc(pacientesCollectionRef, patientData);
             updateTotalPatientCount();
-            showToast("Paciente ingresado con éxito", "success");
+            showToast("Paciente ingresado", "success");
         }
         
         resetForm();
         showView('consulta-view');
-        // Forzamos recarga de la lista para ver el nuevo
         applyFiltersAndRender();
         
     } catch (error) {
-        console.error("Error al guardar paciente:", error);
-        showToast("Error al guardar el paciente.", "error");
+        console.error("Error al guardar:", error);
+        showToast("Error al guardar.", "error");
     } finally {
         showLoading(false);
     }
 }
 
-/** Limpia el formulario y el estado de edición */
 function resetForm() {
     document.getElementById('patient-form').reset();
     editingPatientId = null;
     selectedDiagnosticos = [];
     updateSelectedDiagnosticosDisplay();
-    document.getElementById('form-title').textContent = "Ingreso de Nuevo Paciente";
+    document.getElementById('form-title').textContent = "Nuevo Ingreso";
     document.getElementById('btn-submit-form').textContent = "Guardar Paciente";
     document.getElementById('btn-cancelar-edicion').classList.add('hidden');
 }
 
-/** Maneja el clic en los botones de la lista de pacientes */
 function handlePatientListClick(e) {
     const button = e.target.closest('button');
     if (!button) return;
@@ -365,90 +482,61 @@ function handlePatientListClick(e) {
             form.statusEgreso.value = patient.statusEgreso || '';
             selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
             updateSelectedDiagnosticosDisplay();
+            
             editingPatientId = patient.id;
             document.getElementById('form-title').textContent = "Editando Paciente";
-            document.getElementById('btn-submit-form').textContent = "Actualizar Paciente";
+            document.getElementById('btn-submit-form').textContent = "Actualizar Datos";
             document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
             showView('ingreso-view');
-        } else {
-            showToast("Error al cargar paciente. Intente de nuevo.", "error");
         }
-        
     } else if (action === 'delete') {
         patientToDeleteId = id;
         showDeleteModal(true, name);
-    } else if (action === 'share') { // <-- NUEVO: Manejo del botón Compartir
+    } else if (action === 'share') { 
         const patient = filteredPacientes.find(p => p.id === id);
-        if (patient) {
-            sharePatientSummary(patient);
-        } else {
-             showToast("Error: No se encontró el paciente para compartir.", "error");
-        }
+        if (patient) sharePatientSummary(patient);
     }
 }
 
-/** Genera el resumen del paciente y lo copia al portapapeles. */
 function sharePatientSummary(patient) {
     const summary = `
---- FICHA NEONATOLOGÍA ---
-Paciente: ${patient.nombre || 'N/A'}
-F. Nacimiento: ${patient.fechaNacimiento || 'N/A'}
-Edad Gestacional: ${patient.edadGestacional ? `${patient.edadGestacional} sem` : 'N/A'}
-Peso: ${patient.peso ? `${patient.peso} gr` : 'N/A'}
-Procedencia: ${patient.procedencia || 'N/A'}
+*FICHA NEONATOLOGÍA*
+👤 *${patient.nombre || 'N/A'}*
+📅 Nac: ${patient.fechaNacimiento || 'N/A'}
+⚖️ Peso: ${patient.peso ? `${patient.peso}gr` : 'N/A'} | EG: ${patient.edadGestacional ? `${patient.edadGestacional}sem` : 'N/A'}
+🏥 Procedencia: ${patient.procedencia || 'N/A'}
+🏷️ Status: ${patient.statusEgreso || 'Internado'}
 
-F. Internación: ${patient.fechaInternacion || 'N/A'}
-F. Egreso: ${patient.fechaEgreso || 'N/A'}
-Status Egreso: ${patient.statusEgreso || 'Internado'}
-
-Diagnósticos:
-- ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0
-    ? patient.diagnosticos.join('\n- ')
-    : 'Ninguno registrado'}
-    
-ID Interno: ${patient.id || 'N/A'}
+📋 *Diagnósticos:*
+${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patient.diagnosticos.join(', ') : 'S/D'}
 `;
-
-    // Copiar el texto al portapapeles
-    // Usamos el método 'execCommand' como alternativa robusta en iframes
-    const textarea = document.createElement('textarea');
-    textarea.value = summary;
-    textarea.style.position = 'fixed'; // Para evitar desplazamiento
-    textarea.style.opacity = 0;
-    document.body.appendChild(textarea);
-    textarea.focus();
-    textarea.select();
     
-    try {
-        const successful = document.execCommand('copy');
-        if (successful) {
-            showToast(`Ficha de ${patient.nombre} copiada al portapapeles.`, 'success');
-        } else {
-             showToast("Error: No se pudo copiar el texto. Intente manualmente.", 'warn');
-        }
-    } catch (err) {
-        console.error('Error al intentar copiar:', err);
-        showToast("Error: El navegador no permite copiar automáticamente.", 'error');
-    } finally {
+    navigator.clipboard.writeText(summary).then(() => {
+        showToast("Ficha copiada al portapapeles", 'success');
+    }).catch(err => {
+        // Fallback
+        const textarea = document.createElement('textarea');
+        textarea.value = summary;
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
         document.body.removeChild(textarea);
-    }
+        showToast("Ficha copiada", 'success');
+    });
 }
 
-// ... (Resto de las funciones de UI, Modales y Lógica de Diagnósticos) ...
-
-/** Confirma y ejecuta el borrado del paciente */
 async function confirmDeletePatient() {
     if (!patientToDeleteId) return;
     
-    showLoading(true, "Borrando paciente...");
+    showLoading(true, "Borrando...");
     try {
         const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
         await deleteDoc(patientRef);
         updateTotalPatientCount();
-        showToast("Paciente borrado con éxito", "success");
+        showToast("Paciente eliminado", "success");
     } catch (error) {
-        console.error("Error al borrar paciente:", error);
-        showToast("Error al borrar el paciente.", "error");
+        console.error("Error al borrar:", error);
+        showToast("Error al eliminar.", "error");
     } finally {
         showDeleteModal(false);
         showLoading(false);
@@ -456,9 +544,6 @@ async function confirmDeletePatient() {
     }
 }
 
-// --- LÓGICA DEL MODAL DE DIAGNÓSTICOS ---
-
-/** Actualiza la lista combinada de diagnósticos y el select de filtro */
 function updateAllDiagnosticosList() {
     allDiagnosticos = [...baseDiagnosticos, ...customDiagnosticos].sort();
     
@@ -477,7 +562,6 @@ function updateAllDiagnosticosList() {
     selectPatologia.value = currentValue;
 }
 
-/** Renderiza la lista de checkboxes en el modal de diagnósticos */
 function renderDiagnosticoModalList() {
     const listContainer = document.getElementById('diag-modal-list');
     const filter = document.getElementById('diag-modal-search').value.toLowerCase();
@@ -486,36 +570,29 @@ function renderDiagnosticoModalList() {
     
     const diagnosToShow = allDiagnosticos.filter(d => d.toLowerCase().includes(filter));
     
-    if (diagnosToShow.length === 0 && filter === '') {
-        listContainer.innerHTML = '<p class="text-gray-500">Cargando diagnósticos...</p>';
-        return;
-    }
-
-    if (diagnosToShow.length === 0 && filter !== '') {
-        listContainer.innerHTML = `<p class="text-gray-500">No se encontraron diagnósticos para "${filter}".</p>`;
+    if (diagnosToShow.length === 0) {
+        listContainer.innerHTML = '<p class="text-sm text-gray-400 italic p-2">No se encontraron resultados.</p>';
         return;
     }
 
     diagnosToShow.forEach(diag => {
         const isChecked = selectedDiagnosticos.includes(diag);
         const li = document.createElement('li');
-        li.classList.add('flex', 'items-center', 'p-2', 'hover:bg-gray-100', 'rounded-md');
+        li.classList.add('flex', 'items-center', 'p-2', 'hover:bg-gray-50', 'rounded', 'cursor-pointer');
         li.innerHTML = `
             <label class="flex items-center w-full cursor-pointer">
                 <input type="checkbox" 
-                       class="h-5 w-5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
+                       class="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" 
                        data-diag-name="${diag}" 
                        ${isChecked ? 'checked' : ''}>
-                <span class="ml-3 text-gray-700">${diag}</span>
+                <span class="ml-3 text-sm text-gray-700">${diag}</span>
             </label>
         `;
         
         li.querySelector('input').addEventListener('change', (e) => {
             const name = e.target.dataset.diagName;
             if (e.target.checked) {
-                if (!selectedDiagnosticos.includes(name)) {
-                    selectedDiagnosticos.push(name);
-                }
+                if (!selectedDiagnosticos.includes(name)) selectedDiagnosticos.push(name);
             } else {
                 selectedDiagnosticos = selectedDiagnosticos.filter(d => d !== name);
             }
@@ -525,128 +602,78 @@ function renderDiagnosticoModalList() {
     });
 }
 
-/** Guarda los diagnósticos seleccionados del modal al formulario */
 function saveDiagnosticosFromModal() {
     updateSelectedDiagnosticosDisplay();
     showDiagnosticoModal(false);
 }
 
-/** Actualiza el display de diagnósticos seleccionados en el formulario */
 function updateSelectedDiagnosticosDisplay() {
     const container = document.getElementById('selected-diagnosticos-display');
     if (selectedDiagnosticos.length === 0) {
-        container.innerHTML = '<p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>';
+        container.innerHTML = '<p class="text-sm text-gray-500 w-full text-center py-2">Ningún diagnóstico seleccionado.</p>';
     } else {
         container.innerHTML = selectedDiagnosticos
-            .map(d => `<span class="inline-flex items-center bg-blue-100 text-blue-800 text-sm font-medium mr-2 mb-2 px-2.5 py-0.5 rounded-full">${d}</span>`)
+            .map(d => `<span class="inline-flex items-center bg-blue-50 text-blue-700 text-xs font-semibold mr-2 mb-2 px-2.5 py-1 rounded border border-blue-100">${d}</span>`)
             .join('');
     }
 }
 
-/** Agrega un nuevo diagnóstico customizado a Firestore */
 async function addNewDiagnostico() {
     const input = document.getElementById('diag-modal-new-diag');
     const newDiagName = input.value.trim();
     
-    if (!newDiagName) {
-        showToast("Escriba un nombre para el diagnóstico", "warn");
-        return;
-    }
+    if (!newDiagName) return;
     
     if (allDiagnosticos.some(d => d.toLowerCase() === newDiagName.toLowerCase())) {
-        showToast("Ese diagnóstico ya existe", "warn");
+        showToast("Ya existe ese diagnóstico", "warn");
         return;
     }
     
     try {
         await addDoc(customDiagnosticosCollectionRef, { nombre: newDiagName });
-        showToast("Diagnóstico agregado", "success");
         input.value = '';
-        if (!selectedDiagnosticos.includes(newDiagName)) {
-             selectedDiagnosticos.push(newDiagName);
-        }
+        if (!selectedDiagnosticos.includes(newDiagName)) selectedDiagnosticos.push(newDiagName);
         renderDiagnosticoModalList();
     } catch (error) {
         console.error("Error agregando diagnóstico:", error);
-        showToast("No se pudo agregar el diagnóstico", "error");
     }
 }
 
-// --- LÓGICA DE CONSULTA Y FILTRADO ---
-
-/** Aplica filtros, consulta a Firestore y renderiza */
 async function applyFiltersAndRender() {
     const searchInput = document.getElementById('search-general');
     if (!searchInput) return;
 
-    // 1. OBTENER TODOS LOS FILTROS
-    const searchTerm = searchInput.value.toLowerCase(); // Convertido a minúsculas
+    const searchTerm = searchInput.value.toLowerCase(); 
     const dateStart = document.getElementById('search-date-start').value;
     const dateEnd = document.getElementById('search-date-end').value;
-    const egStartValue = document.getElementById('search-eg-start').value;
-    const egEndValue = document.getElementById('search-eg-end').value;
+    const egStart = parseFloat(document.getElementById('search-eg-start').value);
+    const egEnd = parseFloat(document.getElementById('search-eg-end').value);
     const patologiaFilter = document.getElementById('search-patologia').value;
 
-    const egStart = parseFloat(egStartValue);
-    const egEnd = parseFloat(egEndValue);
+    const hasFilters = (searchTerm && searchTerm.trim() !== '') || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter;
 
-    // 2. VERIFICAR SI HAY FILTROS ACTIVOS
-    const hasFilters =
-        (searchTerm && searchTerm.trim() !== '') ||
-        dateStart || dateEnd ||
-        !isNaN(egStart) || !isNaN(egEnd) ||
-        patologiaFilter;
-
-    // Si no hay filtros, CARGAR LOS ÚLTIMOS 3 INGRESOS
     if (!hasFilters) {
-        showLoading(true, "Cargando últimos ingresos...");
         try {
-            // Consulta: Ordenar por fecha de creación (descendente) y limitar a 3
             const q = query(pacientesCollectionRef, orderBy("createdAt", "desc"), limit(3));
             const querySnapshot = await getDocs(q);
-            
             filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-            
-            // Renderizar (false indica que no es un filtro de búsqueda activa)
             renderPatientList(filteredPacientes, false);
         } catch (error) {
-            console.error("Error cargando últimos pacientes:", error);
-            // Si falla (ej: falta índice o campo createdAt), mostramos lista vacía
-            filteredPacientes = [];
+            console.error("Error:", error);
             renderPatientList([], false);
-        } finally {
-            showLoading(false);
         }
         return;
     }
 
-    // 3. MOSTRAR CARGA Y PREPARAR CONSULTA DE FILTROS
-    showLoading(true, "Buscando...");
-    
+    showLoading(true, "Filtrando...");
     const qConstraints = []; 
 
-    // 4. CONSTRUIR LAS CONDICIONES DE CONSULTA
+    if (patologiaFilter) qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
+    if (dateStart) qConstraints.push(where("fechaNacimiento", ">=", dateStart));
+    if (dateEnd) qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
+    if (!isNaN(egStart)) qConstraints.push(where("edadGestacional", ">=", egStart));
+    if (!isNaN(egEnd)) qConstraints.push(where("edadGestacional", "<=", egEnd));
     
-    // Filtro Patología
-    if (patologiaFilter) {
-        qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
-    }
-    // Filtro Fecha Nacimiento
-    if (dateStart) {
-        qConstraints.push(where("fechaNacimiento", ">=", dateStart));
-    }
-    if (dateEnd) {
-        qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
-    }
-    // Filtro Edad Gestacional
-    if (!isNaN(egStart)) {
-        qConstraints.push(where("edadGestacional", ">=", egStart));
-    }
-    if (!isNaN(egEnd)) {
-        qConstraints.push(where("edadGestacional", "<=", egEnd));
-    }
-    
-    // Filtro Nivel Pro por Nombre (keywords)
     if (searchTerm) {
         const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
         searchKeywords.forEach(kw => {
@@ -654,102 +681,80 @@ async function applyFiltersAndRender() {
         });
     }
     
-    // 5. EJECUTAR LA CONSULTA
     try {
         const q = query(pacientesCollectionRef, ...qConstraints);
         const querySnapshot = await getDocs(q);
-        
         filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
         renderPatientList(filteredPacientes, true);
-
     } catch (error) {
-        console.error("Error en la consulta:", error);
-        showToast("Error al buscar. (Posiblemente falte un índice en Firebase. Revisa la consola de JS para el link)", "error");
-        console.log("======================================");
-        console.log("ERROR DE FIRESTORE: Si el error menciona un índice, copiá y pegá el link que aparece en esta consola para crearlo.");
-        console.log("======================================");
+        console.error("Error en consulta:", error);
+        showToast("Error en búsqueda (falta índice)", "error");
     } finally {
         showLoading(false);
     }
 }
 
-
-/** Renderiza la lista de pacientes en la vista de consulta */
 function renderPatientList(pacientes, hasFilter) {
     const listContainer = document.getElementById('patient-list-container');
     const counterEl = document.getElementById('patient-count');
     
     if (!listContainer || !counterEl) return;
-
     const total = totalPatientCount || 0;
 
     if (hasFilter) {
-        // Caso búsqueda activa
-        counterEl.textContent = `Total ingresados: ${total} paciente(s). Coinciden con la búsqueda: ${pacientes.length}`;
+        counterEl.innerHTML = `Total: <b>${total}</b> | Filtrados: <b>${pacientes.length}</b>`;
     } else {
-        // Caso vista por defecto (últimos 3)
-        if (pacientes.length > 0) {
-            counterEl.textContent = `Total ingresados: ${total}. Mostrando los últimos ${pacientes.length} ingresos.`;
-        } else {
-            counterEl.textContent = `Total ingresados: ${total} paciente(s). Use los filtros para buscar.`;
-        }
+        counterEl.innerHTML = `Total Histórico: <b>${total}</b> (Mostrando últimos ${pacientes.length})`;
     }
     
-    // Si no hay pacientes y NO es la vista por defecto con últimos ingresos
-    if ((!pacientes || pacientes.length === 0) && hasFilter) {
-        listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">No se encontraron pacientes que coincidan con la búsqueda.</p>';
-        return;
-    }
-    
-    // Si no hay pacientes y ES la vista por defecto (ej: base de datos vacía o error)
-    if ((!pacientes || pacientes.length === 0) && !hasFilter) {
-        listContainer.innerHTML = '<p class="text-gray-500 text-center py-8">Use los filtros de arriba para realizar una búsqueda.</p>';
+    if ((!pacientes || pacientes.length === 0)) {
+        listContainer.innerHTML = '<div class="p-8 text-center text-gray-400 bg-gray-50">No se encontraron pacientes.</div>';
         return;
     }
     
     listContainer.innerHTML = `
-        <div class="overflow-x-auto rounded-lg border border-gray-200 shadow-sm">
-            <table class="min-w-full divide-y divide-gray-200 bg-white">
-                <thead class="bg-gray-50">
+        <div class="overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-100">
                     <tr>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Nombre</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">F. Nac.</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Peso</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">EG</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Procedencia</th>
-                        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Status Egreso</th>
-                        <th scope="col" class="relative px-6 py-3"><span class="sr-only">Acciones</span></th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Paciente</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Detalles</th>
+                        <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
+                        <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-gray-200">
+                <tbody class="bg-white divide-y divide-gray-100">
                     ${pacientes.map(p => `
-                        <tr class="hover:bg-gray-50">
+                        <tr class="hover:bg-blue-50 transition-colors">
                             <td class="px-6 py-4 whitespace-nowrap">
-                                <div class="text-sm font-medium text-gray-900">${p.nombre}</div>
-                                <div class="text-sm text-gray-500 md:hidden">${p.fechaNacimiento || 'N/A'}</div>
+                                <div class="text-sm font-bold text-gray-900">${p.nombre}</div>
+                                <div class="text-xs text-gray-500">${p.fechaNacimiento || '--/--/----'}</div>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden sm:table-cell">${p.fechaNacimiento || 'N/A'}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.peso ? `${p.peso} gr` : 'N/A'}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${p.edadGestacional ? `${p.edadGestacional} sem` : 'N/A'}</td>
-                            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 hidden md:table-cell">${p.procedencia || 'N/A'}</td>
-                            <td class="px-6 py-4 whitespace-nowrap hidden md:table-cell">
-                                ${p.statusEgreso ? `<span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <div class="text-xs text-gray-700"><span class="font-semibold">Peso:</span> ${p.peso ? p.peso + 'g' : '-'}</div>
+                                <div class="text-xs text-gray-700"><span class="font-semibold">EG:</span> ${p.edadGestacional ? p.edadGestacional + 's' : '-'}</div>
+                            </td>
+                            <td class="px-6 py-4 whitespace-nowrap">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
                                     p.statusEgreso === 'Alta' ? 'bg-green-100 text-green-800' :
                                     p.statusEgreso === 'Derivación' ? 'bg-yellow-100 text-yellow-800' :
-                                    p.statusEgreso === 'Obito' ? 'bg-red-100 text-red-800' : 'bg-gray-100 text-gray-800'
-                                }">${p.statusEgreso}</span>` : '<span class="text-gray-400">Internado</span>'}
+                                    p.statusEgreso === 'Obito' ? 'bg-red-100 text-red-800' : 'bg-blue-100 text-blue-800'
+                                }">
+                                    ${p.statusEgreso || 'Internado'}
+                                </span>
                             </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium flex justify-end space-x-2">
-                                <button data-action="share" data-id="${p.id}" data-name="${p.nombre}" class="text-gray-500 hover:text-blue-500" title="Compartir Ficha">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684L12 12l-3.316-1.342m0 2.684a2 2 0 110-2.684m0 2.684c.245.485.49 1.485.49 2.073 0 1.054-1.127 1.472-2.316 1.472s-2.316-.418-2.316-1.472c0-.588.245-1.588.49-2.073m4.632 0h.442c.749 0 1.51.326 2.014.946l3.65 4.542a1.865 1.865 0 01-1.077 2.628L10 20l-1.92-2.421a1.865 1.865 0 01-1.077-2.628l3.65-4.542a1.865 1.865 0 012.014-.946z"/></svg>
-                                </button>
-                                <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="text-blue-600 hover:text-blue-900" title="Editar">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path></svg>
-                                </button>
-                                <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="text-red-600 hover:text-red-900 ml-1" title="Borrar">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
-                                </button>
+                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <div class="flex justify-end gap-2">
+                                    <button data-action="share" data-id="${p.id}" data-name="${p.nombre}" class="btn-share shadow-sm">
+                                        Compartir
+                                    </button>
+                                    <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="btn-edit shadow-sm">
+                                        Editar
+                                    </button>
+                                    <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="btn-danger shadow-sm">
+                                        Borrar
+                                    </button>
+                                </div>
                             </td>
                         </tr>
                     `).join('')}
@@ -759,130 +764,53 @@ function renderPatientList(pacientes, hasFilter) {
     `;
 }
 
-// --- LÓGICA DE EXPORTACIÓN ---
-
-/** Exporta un array de datos a un archivo CSV */
 function exportToCsv(dataToExport, filename) {
     if (!dataToExport || dataToExport.length === 0) {
         showToast("No hay datos para exportar", "warn");
         return;
     }
-    
-    const headers = [
-        "ID", "Nombre", "Fecha Nacimiento", "Peso (gr)", "EG (sem)", "Procedencia", 
-        "Fecha Internación", "Fecha Egreso", "Status Egreso", "Diagnósticos"
-    ];
+    const headers = ["ID", "Nombre", "F.Nac", "Peso", "EG", "Procedencia", "F.Int", "F.Egr", "Status", "Diagnosticos"];
     const csvRows = [headers.join(',')];
 
     dataToExport.forEach(p => {
-        const escapeCSV = (val) => {
+        const escape = (val) => {
             if (val === undefined || val === null) return '';
             let str = String(val);
-            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-                str = `"${str.replace(/"/g, '""')}"`;
-            }
+            if (str.includes(',') || str.includes('"') || str.includes('\n')) str = `"${str.replace(/"/g, '""')}"`;
             return str;
         };
-
-        const diagnosticosStr = Array.isArray(p.diagnosticos) ? p.diagnosticos.join('; ') : '';
-        
-        const values = [
-            p.id,
-            p.nombre,
-            p.fechaNacimiento,
-            p.peso,
-            p.edadGestacional,
-            p.procedencia,
-            p.fechaInternacion,
-            p.fechaEgreso,
-            p.statusEgreso,
-            diagnosticosStr
-        ].map(escapeCSV);
-        
+        const diagStr = Array.isArray(p.diagnosticos) ? p.diagnosticos.join('; ') : '';
+        const values = [p.id, p.nombre, p.fechaNacimiento, p.peso, p.edadGestacional, p.procedencia, p.fechaInternacion, p.fechaEgreso, p.statusEgreso, diagStr].map(escape);
         csvRows.push(values.join(','));
     });
 
-    const csvString = csvRows.join('\n');
-    const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    
-    link.setAttribute('href', url);
-    link.setAttribute('download', `${filename}.csv`);
-    link.style.visibility = 'hidden';
-    
-    document.body.appendChild(link);
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
     link.click();
-    document.body.removeChild(link);
-    
-    showToast("Datos exportados", "success");
 }
 
-/** Exporta TODOS los pacientes de la base de datos */
 async function handleExportAll() {
-    showLoading(true, "Exportando todos los pacientes...");
-
+    showLoading(true, "Exportando Todo...");
     try {
-        // 1. Consultar TODOS los pacientes, sin filtros
-        const querySnapshot = await getDocs(pacientesCollectionRef);
-        
-        // 2. Mapear los resultados
-        const allPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-        if (allPacientes.length === 0) {
-            showToast("No hay pacientes para exportar", "warn");
-            showLoading(false); // No olvidar ocultar el loading
-            return;
-        }
-
-        // 3. Llamar a la función de exportación existente
-        exportToCsv(allPacientes, 'pacientes_neo_total');
-
+        const snapshot = await getDocs(pacientesCollectionRef);
+        const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        exportToCsv(all, 'pacientes_neo_total_db');
     } catch (error) {
-        console.error("Error al exportar todo:", error);
-        showToast("Error al exportar todos los pacientes", "error");
+        console.error(error);
+        showToast("Error al exportar todo", "error");
     } finally {
         showLoading(false);
     }
 }
 
-
-// --- DATOS (DIAGNÓSTICOS) ---
-
-/** Popula la lista base de diagnósticos (MODO ANTIGUO) */
 function populateBaseDiagnosticos() {
-     baseDiagnosticos = [
-        "Taquipnea Transitoria del Recién Nacido (TTRN)", "Síndrome de Dificultad Respiratoria (SDR)", "Síndrome de Aspiración de Líquido Amniótico Meconial (SALAM)", 
-        "Hipertensión Pulmonar Persistente del Recién Nacido (HPPRN)", "Neumonía Neonatal Precoz", "Neumonía Neonatal Tardía", "Displasia Broncopulmonar (DBP)", 
-        "Apnea del Prematuro", "Neumotórax", "Hernia Diafragmática Congénita", "Atresia de Coanas", "Enfisema Lobar Congénito", "Malformación Adenomatosa Quística Pulmonar", 
-        "Hiperbilirrubinemia Neonatal", "Hipoglucemia Neonatal", "Hipocalcemia Neonatal", "Hipotermia Neonatal", "Inestabilidad Térmica", "Anemia del Prematuro", 
-        "Policitemia Neonatal", "Enfermedad Hemorrágica del Recién Nacido", "Trombocitopenia Neonatal Inmune", "Trombocitopenia Neonatal No Inmune", 
-        "Trastornos de la Coagulación Neonatal", "Hiponatremia", "Hipernatremia", "Hipomagnesemia", "Sospecha de Error Innato del Metabolismo", 
-        "Sospecha de Sepsis Neonatal Precoz", "Sepsis Neonatal Precoz Confirmada", "Sospecha de Sepsis Neonatal Tardía", "Sepsis Neonatal Tardía Confirmada", 
-        "Meningitis Neonatal", "Infección por Citomegalovirus (CMV) Congénito", "Infección por Herpes Simple (HSV) Neonatal", "Sífilis Congénita", 
-        "Toxoplasmosis Congénita", "Conjuntivitis Neonatal Química", "Conjuntivitis Neonatal Gonocócica", "Conjuntivitis Neonatal por Clamidia", "Onfalitis", 
-        "Candidiasis Sistémica Neonatal", "Infección del Tracto Urinario (ITU) Neonatal", "Encefalopatía Hipóxico-Isquémica (EHI)", "Convulsiones Neonatales", 
-        "Hemorragia Intraventricular Grado I", "Hemorragia Intraventricular Grado II", "Hemorragia Intraventricular Grado III", "Hemorragia Intraventricular Grado IV", 
-        "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia", 
-        "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal", 
-        "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)", 
-        "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)", 
-        "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal", 
-        "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante", 
-        "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria", 
-        "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal", 
-        "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa", 
-        "Diarrea Neonatal Metabólica", "Deshidratación Neonatal", 
-        "Prematurez", // Diagnóstico consolidado
-        "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1", 
-        "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4", 
-        "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)", 
-        "Extremado Bajo Peso al Nacer (EBPN)", "Insuficiencia Renal Aguda (IRA) Neonatal", "Hidronefrosis Neonatal", "Reflujo Vesicoureteral", 
-        "Válvulas de Uretra Posterior", "Extrofia Vesical", "Hipospadias", "Epispadias", "Trastorno del Desarrollo Sexual (Genitales Ambiguos)", 
-        "Riñón Multiquístico Displásico", "Displasia del Desarrollo de la Cadera (DDC)", "Fisura Labiopalatina", "Síndrome de Down (Trisomía 21)", 
-        "Síndrome de Edwards (Trisomía 18)", "Síndrome de Patau (Trisomía 13)", "Síndrome de Turner", "Pie Equinovaro (Pie Zambo)", "Cefalohematoma", 
-        "Caput Succedaneum", "Fractura de Clavícula Obstétrica", "Linfangioma / Higroma Quístico", "Hemangioma Infantil", "Hiperplasia Suprarrenal Congénita", 
-        "Hipotiroidismo Congénito"
-    ];
-    baseDiagnosticos.sort();
+    baseDiagnosticos = [
+       "Taquipnea Transitoria (TTRN)", "SDR / Membrana Hialina", "SALAM", "Hipertensión Pulmonar (HPPRN)", 
+       "Neumonía", "Displasia Broncopulmonar", "Apnea", "Neumotórax", "Sepsis Precoz", "Sepsis Tardía", 
+       "Hipoglucemia", "Hiperbilirrubinemia", "Anemia", "Policitemia", "EHI / Asfixia", "Convulsiones", 
+       "HIV", "Sifilis Congénita", "CMV", "Toxoplasmosis", "Cardiopatía Congénita", "Prematurez", 
+       "RCIU", "PEG", "Bajo Peso (BPN)", "Muy Bajo Peso (MBPN)", "Extremado Bajo Peso (EBPN)"
+   ].sort();
 }
