@@ -1,75 +1,206 @@
 <!DOCTYPE html>
-<html lang="es"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1.0"> <title>Neonatología - Hospital Carrillo</title> <!-- 1. Cargar Tailwind CSS --> <script src="https://cdn.tailwindcss.com"></script> <!-- 2. Cargar Iconos (Heroicons) --> <script type="module" src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script> <script nomodule src="https://cdn.jsdelivr.net/npm/heroicons@2.1.3/24/outline/index.js"></script>
-<!-- 3. Cargar Lógica de la App -->
-<script src="app.js" type="module" defer></script>
-
-<!-- Estilos CSS personalizados -->
-<style>
-    #diag-modal-list::-webkit-scrollbar { width: 8px; }
-    #diag-modal-list::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
-    #diag-modal-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
-    #diag-modal-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
-</style>
-
-
-</head>
-<body class="bg-gray-100 font-sans antialiased">
-<!-- Contenedor Principal -->
-<div class="min-h-screen">
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Neonatología - Hospital Carrillo</title>
     
-    <!-- Header -->
-    <header class="bg-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <div class="flex justify-between items-center h-16">
-                <div class="flex items-center">
-                    <svg class="h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"/>
-                    </svg>
-                    <h1 class="ml-3 text-2xl font-bold text-gray-800">Neo Carrillo</h1>
-                    <span class="ml-2 text-sm font-medium text-gray-500 hidden sm:inline">Hosp. Carrillo - Neonatología</span>
-                </div>
-                <div class="text-xs text-gray-400" id="user-id-display">Conectando...</div>
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <script src="app.js" type="module" defer></script>
+
+    <style>
+        /* Importar fuente Inter */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+        /* Fuente general */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f9ff; /* bg-sky-50 */
+            color: #111827; /* text-gray-900 */
+        }
+
+        /* Títulos */
+        .title-text {
+            color: #2563eb; 
+        }
+
+        /* Botones Generales */
+        .btn-primary {
+            background-color: #2563eb;
+            color: white;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: bold;
+            transition: background-color 0.3s;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            border: none;
+            cursor: pointer;
+        }
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+        }
+
+        .btn-secondary {
+            background-color: #f3f4f6;
+            color: #374151;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            font-weight: 600;
+            border: 1px solid #d1d5db;
+            transition: background-color 0.3s;
+            cursor: pointer;
+        }
+        .btn-secondary:hover {
+            background-color: #e5e7eb;
+        }
+
+        /* Botones de Acción en Tabla */
+        .btn-danger {
+            background-color: #dc2626;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            border: none;
+        }
+        .btn-danger:hover { background-color: #b91c1c; }
+
+        .btn-edit {
+            background-color: #f97316;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            border: none;
+        }
+        .btn-edit:hover { background-color: #ea580c; }
+
+        .btn-share {
+            background-color: #10b981; 
+            color: white;
+            padding: 0.4rem 0.8rem;
+            font-size: 0.8rem;
+            border-radius: 0.375rem;
+            font-weight: 600;
+            transition: background-color 0.3s;
+            border: none;
+        }
+        .btn-share:hover { background-color: #059669; }
+
+        /* Formularios */
+        .form-input {
+            width: 100%;
+            padding: 0.6rem 0.75rem;
+            border: 1px solid #d1d5db;
+            border-radius: 0.5rem;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            background-color: #fff;
+        }
+        .form-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+            outline: none;
+        }
+
+        /* Pestañas */
+        .tab-btn {
+            padding: 1rem 1.5rem;
+            font-weight: 600;
+            border-radius: 0.5rem 0.5rem 0 0;
+            transition: background-color 0.3s, color 0.3s;
+            border: none;
+            cursor: pointer;
+            outline: none;
+        }
+        .tab-btn.active {
+            background-color: white;
+            color: #2563eb;
+            box-shadow: 0 -4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+        .tab-btn.inactive {
+            background-color: transparent;
+            color: #6b7280;
+        }
+        .tab-btn.inactive:hover {
+            background-color: #e0f2fe; 
+            color: #2563eb;
+        }
+
+        /* Scrollbars custom */
+        #diag-modal-list::-webkit-scrollbar { width: 8px; }
+        #diag-modal-list::-webkit-scrollbar-track { background: #f1f1f1; border-radius: 10px; }
+        #diag-modal-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        #diag-modal-list::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        /* Dashboard Card */
+        .dash-card {
+            background-color: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        .dash-card h4 { font-size: 0.875rem; color: #64748b; font-weight: 600; text-transform: uppercase; margin-bottom: 0.5rem; }
+        .dash-card p { font-size: 2rem; font-weight: 700; color: #0f172a; }
+    </style>
+</head>
+<body class="bg-sky-50 text-gray-900 min-h-screen flex flex-col">
+
+    <header class="bg-blue-600 text-white shadow-lg p-4">
+        <div class="container mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <h1 class="text-2xl font-bold tracking-tight">Neo Carrillo</h1>
+            </div>
+            <div class="flex items-center gap-4">
+                <span id="user-id-display" class="text-sm font-medium bg-blue-700 px-3 py-1 rounded-full opacity-90">Conectando...</span>
             </div>
         </div>
     </header>
 
-    <!-- Navegación por Pestañas -->
-    <div class="bg-white shadow-sm -mt-px">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-            <nav class="flex space-x-8 -mb-px">
-                <button id="tab-ingreso" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
-                    Ingreso / Edición
-                </button>
-                <button id="tab-consulta" class="text-gray-500 hover:text-gray-700 whitespace-nowrap py-4 px-1 font-medium text-sm">
-                    Consulta y Búsqueda
-                </button>
-            </nav>
+    <nav class="container mx-auto px-4 sm:px-8 mt-8">
+        <div class="flex flex-wrap gap-x-2 border-b border-gray-200 bg-gray-100 rounded-t-lg p-2">
+            <button id="tab-ingreso" class="tab-btn active w-full sm:w-auto text-center flex-1 sm:flex-none">
+                Ingreso / Edición
+            </button>
+            <button id="tab-consulta" class="tab-btn inactive w-full sm:w-auto text-center flex-1 sm:flex-none">
+                Consulta y Búsqueda
+            </button>
+            <button id="tab-dashboard" class="tab-btn inactive w-full sm:w-auto text-center flex-1 sm:flex-none">
+                Dashboard
+            </button>
         </div>
-    </div>
+    </nav>
 
-    <!-- Contenido Principal -->
-    <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <main class="container mx-auto px-4 sm:px-8 mb-12 flex-grow">
 
-        <!-- VISTA 1: INGRESO DE PACIENTES -->
-        <div id="ingreso-view" class="hidden">
-            <form id="patient-form" class="bg-white p-6 sm:p-8 rounded-lg shadow-lg">
-                <h2 id="form-title" class="text-2xl font-semibold text-gray-900 mb-6">Ingreso de Nuevo Paciente</h2>
+        <div id="ingreso-view" class="p-8 bg-white shadow-lg rounded-b-lg">
+            <div class="flex justify-between items-center mb-6">
+                <h2 id="form-title" class="text-2xl font-semibold title-text">Nuevo Ingreso</h2>
+                <button type="button" id="btn-cancelar-edicion" class="hidden btn-secondary text-sm py-2">Cancelar Edición</button>
+            </div>
+            
+            <form id="patient-form" class="space-y-6">
                 
-                <!-- Datos Personales -->
+                <h3 class="text-lg font-semibold title-text border-b pb-2">Datos del Paciente</h3>
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
                     <div class="md:col-span-2">
-                        <label for="nombre" class="block text-sm font-medium text-gray-700">Nombre y Apellido</label>
-                        <input type="text" id="nombre" name="nombre" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm" required>
+                        <label for="nombre" class="block text-sm font-medium text-gray-700 mb-1">Nombre y Apellido</label>
+                        <input type="text" id="nombre" name="nombre" class="form-input" required placeholder="Ingrese nombre completo">
                     </div>
                     
                     <div>
-                        <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700">Fecha de Nacimiento</label>
-                        <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="fechaNacimiento" class="block text-sm font-medium text-gray-700 mb-1">Fecha de Nacimiento</label>
+                        <input type="date" id="fechaNacimiento" name="fechaNacimiento" class="form-input">
                     </div>
                     
                     <div>
-                        <label for="procedencia" class="block text-sm font-medium text-gray-700">Procedencia</label>
-                        <select id="procedencia" name="procedencia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="procedencia" class="block text-sm font-medium text-gray-700 mb-1">Procedencia</label>
+                        <select id="procedencia" name="procedencia" class="form-input">
                             <option value="">Seleccionar...</option>
                             <option value="Sala de partos">Sala de partos</option>
                             <option value="Quirófano">Quirófano</option>
@@ -80,29 +211,29 @@
                     </div>
                     
                     <div>
-                        <label for="peso" class="block text-sm font-medium text-gray-700">Peso al Nacer (gramos)</label>
-                        <input type="number" id="peso" name="peso" placeholder="Ej: 2500" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="peso" class="block text-sm font-medium text-gray-700 mb-1">Peso al Nacer (gr)</label>
+                        <input type="number" id="peso" name="peso" placeholder="Ej: 2500" class="form-input">
                     </div>
 
                     <div>
-                        <label for="edadGestacional" class="block text-sm font-medium text-gray-700">Edad Gestacional (semanas)</label>
-                        <input type="number" step="0.1" id="edadGestacional" name="edadGestacional" placeholder="Ej: 38.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="edadGestacional" class="block text-sm font-medium text-gray-700 mb-1">Edad Gestacional (sem)</label>
+                        <input type="number" step="0.1" id="edadGestacional" name="edadGestacional" placeholder="Ej: 38.5" class="form-input">
                     </div>
                 </div>
                 
-                <!-- Datos de Internación -->
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mt-6">
+                <h3 class="text-lg font-semibold title-text border-b pb-2 pt-4">Datos de Internación</h3>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                     <div>
-                        <label for="fechaInternacion" class="block text-sm font-medium text-gray-700">Fecha de Internación</label>
-                        <input type="date" id="fechaInternacion" name="fechaInternacion" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="fechaInternacion" class="block text-sm font-medium text-gray-700 mb-1">F. Internación</label>
+                        <input type="date" id="fechaInternacion" name="fechaInternacion" class="form-input">
                     </div>
                     <div>
-                        <label for="fechaEgreso" class="block text-sm font-medium text-gray-700">Fecha de Egreso</label>
-                        <input type="date" id="fechaEgreso" name="fechaEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                        <label for="fechaEgreso" class="block text-sm font-medium text-gray-700 mb-1">F. Egreso</label>
+                        <input type="date" id="fechaEgreso" name="fechaEgreso" class="form-input">
                     </div>
-                    <div class="md:col-span-2">
-                         <label for="statusEgreso" class="block text-sm font-medium text-gray-700">Status de Egreso</label>
-                        <select id="statusEgreso" name="statusEgreso" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                    <div>
+                         <label for="statusEgreso" class="block text-sm font-medium text-gray-700 mb-1">Status Egreso</label>
+                        <select id="statusEgreso" name="statusEgreso" class="form-input">
                             <option value="">(Sin egreso)</option>
                             <option value="Alta">Alta</option>
                             <option value="Derivación">Derivación</option>
@@ -111,201 +242,221 @@
                     </div>
                 </div>
                 
-                <!-- Diagnósticos -->
-                <div class="mt-6">
-                    <label class="block text-sm font-medium text-gray-700">Diagnósticos al Egreso</label>
-                    <div class="mt-2">
-                        <button type="button" id="btn-open-diag-modal" class="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500">
-                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                            Seleccionar Diagnósticos
-                        </button>
-                    </div>
-                    <div id="selected-diagnosticos-display" class="mt-4 p-3 bg-gray-50 rounded-md min-h-[50px] border border-gray-200">
-                        <p class="text-sm text-gray-500">Ningún diagnóstico seleccionado.</p>
+                <h3 class="text-lg font-semibold title-text border-b pb-2 pt-4">Diagnósticos</h3>
+                <div>
+                    <button type="button" id="btn-open-diag-modal" class="btn-secondary w-full sm:w-auto mb-3 flex items-center justify-center">
+                        <svg class="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                        Seleccionar Diagnósticos
+                    </button>
+                    <div id="selected-diagnosticos-display" class="p-4 bg-gray-50 rounded-lg border border-gray-200 min-h-[60px] flex flex-wrap gap-2">
+                        <p class="text-sm text-gray-500 w-full text-center py-2">Ningún diagnóstico seleccionado.</p>
                     </div>
                 </div>
 
-                <!-- Botones de Acción -->
-                <div class="flex justify-end space-x-4 mt-8 pt-6 border-t border-gray-200">
-                    <button type="button" id="btn-cancelar-edicion" class="hidden px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500">
-                        Cancelar
-                    </button>
-                    <button type="submit" id="btn-submit-form" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500">
+                <div class="pt-6 text-right border-t border-gray-100">
+                    <button type="submit" id="btn-submit-form" class="btn-primary w-full sm:w-auto">
                         Guardar Paciente
                     </button>
                 </div>
             </form>
         </div>
 
-        <!-- VISTA 2: CONSULTA DE PACIENTES -->
-        <div id="consulta-view">
-            <!-- Panel de Filtros -->
-            <div class="bg-white p-4 rounded-lg shadow-md mb-6">
+        <div id="consulta-view" class="hidden p-8 bg-white shadow-lg rounded-b-lg">
+            
+            <div class="bg-blue-50 p-6 rounded-lg border border-blue-100 mb-8">
+                <h2 class="text-xl font-semibold title-text mb-4">Filtros de Búsqueda</h2>
+                
                 <div class="flex flex-col gap-4">
-                    
-                    <!-- Fila 1: Filtro General -->
-                    <div>
-                        <label for="search-general" class="block text-sm font-medium text-gray-700">Buscar por Nombre y Apellido</label>
-                        <input type="text" id="search-general" placeholder="Escriba un nombre o apellido..." class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                    </div>
-                    
-                    <!-- Fila 2: Filtro Edad Gestacional (Rango) -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                            <label for="search-eg-start" class="block text-sm font-medium text-gray-700">EG Desde (sem)</label>
-                            <input type="number" step="0.1" id="search-eg-start" placeholder="Ej: 30.5" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Nombre / Apellido</label>
+                            <input type="text" id="search-general" placeholder="Buscar..." class="form-input">
                         </div>
                         <div>
-                            <label for="search-eg-end" class="block text-sm font-medium text-gray-700">EG Hasta (sem)</label>
-                            <input type="number" step="0.1" id="search-eg-end" placeholder="Ej: 36" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Patología</label>
+                            <select id="search-patologia" class="form-input">
+                                <option value="">-- Todas --</option>
+                            </select>
                         </div>
                     </div>
 
-                    <!-- Fila 3: Filtro Fecha Nacimiento -->
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                         <div>
-                            <label for="search-date-start" class="block text-sm font-medium text-gray-700">Nacidos desde</label>
-                            <input type="date" id="search-date-start" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nac. Desde</label>
+                            <input type="date" id="search-date-start" class="form-input text-sm">
                         </div>
                         <div>
-                            <label for="search-date-end" class="block text-sm font-medium text-gray-700">Nacidos hasta</label>
-                            <input type="date" id="search-date-end" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nac. Hasta</label>
+                            <input type="date" id="search-date-end" class="form-input text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">EG Min</label>
+                            <input type="number" step="0.1" id="search-eg-start" placeholder="Sem" class="form-input text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">EG Max</label>
+                            <input type="number" step="0.1" id="search-eg-end" placeholder="Sem" class="form-input text-sm">
                         </div>
                     </div>
-                    
-                    <!-- Fila 4: Filtro Patología -->
-                    <div>
-                        <label for="search-patologia" class="block text-sm font-medium text-gray-700">Buscar por Patología</label>
-                        <select id="search-patologia" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                            <option value="">-- Todas las Patologías --</option>
+                </div>
+            </div>
+
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
+                <div class="text-sm font-medium text-gray-600" id="patient-count">
+                    Cargando...
+                </div>
+                <div class="flex gap-2">
+                    <button id="btn-export-filtered" class="btn-secondary py-2 px-3 text-sm">Exp. Vista</button>
+                    <button id="btn-export-all" class="btn-secondary py-2 px-3 text-sm">Exp. Todo</button>
+                    <button id="btn-nuevo-paciente" class="btn-primary py-2 px-3 text-sm flex items-center">
+                        <svg class="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+                        Nuevo
+                    </button>
+                </div>
+            </div>
+
+            <div class="md:hidden text-right mb-2 text-sm text-blue-600 italic animate-pulse">
+                &larr; Desliza la tabla para ver acciones &rarr;
+            </div>
+
+            <div id="patient-list-container" class="overflow-hidden rounded-lg border border-gray-200">
+                <div class="p-8 text-center text-gray-500">Cargando datos...</div>
+            </div>
+        </div>
+
+        <div id="dashboard-view" class="hidden p-8 bg-white shadow-lg rounded-b-lg">
+            <div class="flex flex-col sm:flex-row justify-between items-center mb-8 gap-4 border-b border-gray-100 pb-4">
+                <h2 class="text-2xl font-semibold title-text">Estadísticas</h2>
+                
+                <div class="flex gap-3 bg-gray-50 p-2 rounded-lg border border-gray-200">
+                    <select id="dash-month" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-md focus:ring-blue-500 focus:border-blue-500 block p-2">
+                        <option value="0">Todo el Año</option>
+                        <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                        <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
+                        <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
+                        <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
+                    </select>
+                    <select id="dash-year" class="bg-white border border-gray-300 text-gray-700 text-sm rounded-md focus:ring-blue-500 focus:border-blue-500 block p-2">
                         </select>
+                </div>
+            </div>
+
+            <div id="dashboard-content" class="animate-fade-in">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-6 mb-8">
+                    <div class="dash-card bg-blue-50 border-blue-100">
+                        <h4>Ingresos</h4>
+                        <p id="stat-ingresos" class="text-blue-700">-</p>
+                    </div>
+                    <div class="dash-card">
+                        <h4>Altas</h4>
+                        <p id="stat-altas" class="text-green-600">-</p>
+                    </div>
+                    <div class="dash-card">
+                        <h4>Derivaciones</h4>
+                        <p id="stat-derivaciones" class="text-yellow-600">-</p>
+                    </div>
+                    <div class="dash-card">
+                        <h4>Óbitos</h4>
+                        <p id="stat-obitos" class="text-red-600">-</p>
                     </div>
                 </div>
-            </div>
 
-            <!-- Acciones (Exportar, Nuevo) -->
-            <div class="flex flex-col sm:flex-row justify-between items-center mb-4">
-                <div class="text-sm font-medium text-gray-700 mb-2 sm:mb-0" id="patient-count">
-                    Cargando pacientes...
-                </div>
-                <div class="flex space-x-3">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                        <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 6l3 1m0 0l-3 9a5.002 5.002 0 006.001 0M6 7l3 9M6 7l6-2m6 2l3-1m-3 1l-3 9a5.002 5.002 0 006.001 0M18 7l3 9m-3-9l-6-2m0-2v2m0 16V5m0 16H9m3 0h3"></path></svg>
+                            Promedios
+                        </h3>
+                        <div class="flex justify-around text-center">
+                            <div>
+                                <p class="text-sm text-gray-500 uppercase font-bold">Peso al Nacer</p>
+                                <p id="stat-avg-peso" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+                                <span class="text-xs text-gray-400">gramos</span>
+                            </div>
+                            <div class="border-l border-gray-200 pl-8">
+                                <p class="text-sm text-gray-500 uppercase font-bold">Edad Gestacional</p>
+                                <p id="stat-avg-eg" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+                                <span class="text-xs text-gray-400">semanas</span>
+                            </div>
+                        </div>
+                    </div>
                     
-                    <!-- Botón: EXPORTAR TODO (Total de la base de datos) -->
-                    <button id="btn-export-filtered" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        Exportar Todo
-                    </button>
-                    
-                    <!-- Botón: EXPORTAR BÚSQUEDA (Lo que se ve en pantalla) -->
-                    <button id="btn-export-all" class="inline-flex items-center px-3 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                        <svg class="w-5 h-5 mr-2 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-                        Exportar Búsqueda
-                    </button>
-
-                    <button id="btn-nuevo-paciente" class="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                        <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
-                        Nuevo Paciente
-                    </button>
+                    <div class="bg-white border border-gray-200 rounded-lg p-6 shadow-sm">
+                        <h3 class="text-lg font-semibold text-gray-700 mb-4 flex items-center">
+                            <svg class="w-5 h-5 mr-2 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 002 2h2a2 2 0 002-2z"></path></svg>
+                            Top 5 Diagnósticos
+                        </h3>
+                        <ul id="stat-top-diag" class="space-y-2 text-sm text-gray-600">
+                            <li class="italic text-gray-400">Cargando datos...</li>
+                        </ul>
+                    </div>
                 </div>
-            </div>
-
-            <!-- Lista de Pacientes -->
-            <div id="patient-list-container">
-                <!-- El contenido se genera con JS -->
-                <p class="text-gray-500 text-center py-8">Cargando pacientes...</p>
             </div>
         </div>
 
     </main>
-</div>
 
-<!-- ======================================================= -->
-<!-- MODALES Y OVERLAYS (Ocultos por defecto)               -->
-<!-- ======================================================= -->
-
-<!-- Overlay de Carga -->
-<div id="loading-overlay" class="hidden fixed inset-0 bg-gray-900 bg-opacity-75 flex items-center justify-center z-50">
-    <div class="flex flex-col items-center">
-        <svg class="animate-spin h-10 w-10 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-        </svg>
-        <p id="loading-message" class="text-white text-lg mt-4">Cargando...</p>
-    </div>
-</div>
-
-<!-- Notificación Toast -->
-<div id="toast-notification" class="hidden opacity-0 transition-opacity duration-500 fixed bottom-5 right-5 w-auto max-w-sm p-4 rounded-lg shadow-lg text-white">
-    <p id="toast-message">Mensaje de notificación.</p>
-</div>
-
-<!-- Modal de Confirmación de Borrado -->
-<div id="delete-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-40 p-4">
-    <div class="bg-white rounded-lg shadow-xl max-w-md w-full p-6">
-        <div class="flex items-start">
-            <div class="flex-shrink-0 h-12 w-12 flex items-center justify-center rounded-full bg-red-100">
-                <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
-            </div>
-            <div class="ml-4 flex-1">
-                <h3 class="text-lg font-medium text-gray-900">Confirmar Borrado</h3>
-                <p class="mt-2 text-sm text-gray-500">
-                    ¿Estás seguro de que quieres borrar al paciente <strong id="delete-patient-name" class="font-medium text-gray-800"></strong>?
-                    Esta acción no se puede deshacer.
-                </p>
-            </div>
+    <footer class="bg-white border-t border-gray-200 py-6 mt-auto">
+        <div class="container mx-auto px-4 text-center text-gray-400 text-sm">
+            &copy; 2025 Neonatología Hospital Carrillo - Sistema NeoManager
         </div>
-        <div class="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse">
-            <button id="btn-confirm-delete" type="button" class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 sm:ml-3 sm:w-auto sm:text-sm">
-                Borrar
-            </button>
-            <button id="btn-cancel-delete" type="button" class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 sm:mt-0 sm:w-auto sm:text-sm">
-                Cancelar
-            </button>
-        </div>
-    </div>
-</div>
+    </footer>
 
-<!-- Modal de Selección de Diagnósticos -->
-<div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-30 p-4">
-    <div class="bg-white rounded-lg shadow-xl max-w-2xl w-full h-[90vh] flex flex-col">
-        <!-- Header del Modal -->
-        <div class="flex justify-between items-center p-4 border-b border-gray-200">
-            <h3 class="text-xl font-semibold text-gray-900">Seleccionar Diagnósticos</h3>
-            <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600">
-                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-            </button>
-        </div>
-        
-        <!-- Contenido del Modal -->
-        <div class="p-4 flex-grow overflow-y-hidden flex flex-col">
-            <!-- Filtro y Agregar Nuevo -->
-            <div class="mb-4">
-                <input type="text" id="diag-modal-search" placeholder="Buscar diagnóstico..." class="block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-            </div>
-            <div class="flex space-x-2 mb-4">
-                <input type="text" id="diag-modal-new-diag" placeholder="Agregar nuevo diagnóstico..." class="flex-grow block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 sm:text-sm">
-                <button id="btn-add-new-diag" class="flex-shrink-0 inline-flex items-center px-3 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-green-600 hover:bg-green-700">
-                    Agregar
-                </button>
+    <div id="diagnostico-modal" class="hidden fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-2xl max-w-2xl w-full h-[80vh] flex flex-col transform transition-all">
+            <div class="flex justify-between items-center p-5 border-b border-gray-100">
+                <h3 class="text-xl font-bold text-gray-800">Seleccionar Diagnósticos</h3>
+                <button id="btn-close-diag-modal" class="text-gray-400 hover:text-gray-600 text-2xl font-light">&times;</button>
             </div>
             
-            <!-- Lista de Diagnósticos (con scroll) -->
-            <div class="flex-grow overflow-y-auto" style="max-height: calc(90vh - 250px);">
-                <ul id="diag-modal-list" class="space-y-1">
-                    <!-- Checkboxes generados por JS -->
-                </ul>
+            <div class="p-5 flex-grow flex flex-col overflow-hidden">
+                <div class="flex gap-2 mb-4">
+                    <input type="text" id="diag-modal-search" placeholder="Buscar..." class="form-input flex-grow">
+                </div>
+                <div class="flex gap-2 mb-4 border-b border-gray-100 pb-4">
+                    <input type="text" id="diag-modal-new-diag" placeholder="Nuevo diagnóstico..." class="form-input flex-grow text-sm">
+                    <button id="btn-add-new-diag" class="btn-secondary py-1 px-3 text-xs uppercase tracking-wide">Agregar</button>
+                </div>
+                
+                <div class="flex-grow overflow-y-auto pr-2">
+                    <ul id="diag-modal-list" class="space-y-1">
+                        </ul>
+                </div>
+            </div>
+            
+            <div class="p-5 border-t border-gray-100 bg-gray-50 text-right rounded-b-lg">
+                <button id="btn-save-diag-modal" class="btn-primary">Confirmar Selección</button>
             </div>
         </div>
-        
-        <!-- Footer del Modal -->
-        <div class="p-4 border-t border-gray-200 bg-gray-50 flex justify-end">
-            <button id="btn-save-diag-modal" class="inline-flex justify-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700">
-                Guardar Selección
-            </button>
+    </div>
+
+    <div id="delete-modal" class="hidden fixed inset-0 bg-red-900 bg-opacity-20 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
+        <div class="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 text-center">
+            <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
+                <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+            </div>
+            <h3 class="text-lg font-medium text-gray-900">¿Borrar paciente?</h3>
+            <p class="mt-2 text-sm text-gray-500">Se eliminará a <span id="delete-patient-name" class="font-bold"></span> permanentemente.</p>
+            <div class="mt-5 flex justify-center gap-3">
+                <button id="btn-cancel-delete" class="btn-secondary py-2 px-4">Cancelar</button>
+                <button id="btn-confirm-delete" class="btn-danger py-2 px-4 text-sm">Sí, Borrar</button>
+            </div>
         </div>
     </div>
-</div>
 
+    <div id="loading-overlay" class="hidden fixed inset-0 bg-white bg-opacity-80 flex items-center justify-center z-50 backdrop-blur-[2px]">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+            <p id="loading-message" class="text-blue-600 font-semibold mt-4">Procesando...</p>
+        </div>
+    </div>
 
-</body> </html>
+    <div id="toast-notification" class="hidden fixed bottom-5 right-5 max-w-sm w-full bg-white border-l-4 p-4 rounded shadow-lg flex items-center transition-all duration-500 z-50 transform translate-y-10 opacity-0">
+        <div class="flex-grow">
+            <p id="toast-message" class="text-sm font-medium text-gray-800"></p>
+        </div>
+    </div>
+
+</body>
+</html>
 
