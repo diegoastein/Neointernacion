@@ -179,7 +179,7 @@
         <div id="ingreso-view" class="p-8 bg-white shadow-lg rounded-b-lg">
             <div class="flex justify-between items-center mb-6">
                 <h2 id="form-title" class="text-2xl font-semibold title-text">Nuevo Ingreso</h2>
-                <button type="button" id="btn-cancelar-edicion" class="hidden btn-secondary text-sm py-2">Cancelar Edición</button>
+                <button type="button" id="btn-cancel-edicion" class="hidden btn-secondary text-sm py-2">Cancelar Edición</button>
             </div>
             
             <form id="patient-form" class="space-y-6">
@@ -310,6 +310,15 @@
                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">EG Max</label>
                             <input type="number" step="0.1" id="search-eg-end" placeholder="Sem" class="form-input text-sm">
                         </div>
+                    </div>
+
+                    <!-- Fila 3: Filtro Específico Internados -->
+                    <div class="mt-2 border-t border-blue-200 pt-3 flex items-center">
+                        <input id="search-only-interned" type="checkbox" class="w-5 h-5 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 focus:ring-2 cursor-pointer">
+                        <label for="search-only-interned" class="ml-2 text-sm font-bold text-blue-800 cursor-pointer select-none flex items-center">
+                            <svg class="w-4 h-4 mr-1 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4"></path></svg>
+                            Mostrar solo Pacientes Internados (Activos)
+                        </label>
                     </div>
                 </div>
             </div>
@@ -618,62 +627,71 @@
 
         // --- MANEJO DE UI ---
 
+        function addListenerSafe(id, event, handler) {
+            const el = document.getElementById(id);
+            if (el) {
+                el.addEventListener(event, handler);
+            } else {
+                console.warn(`Elemento UI no encontrado: ${id}`);
+            }
+        }
+
         function setupUIListeners() {
             // Pestañas
-            document.getElementById('tab-ingreso').addEventListener('click', () => showView('ingreso-view'));
-            document.getElementById('tab-consulta').addEventListener('click', () => {
+            addListenerSafe('tab-ingreso', 'click', () => showView('ingreso-view'));
+            addListenerSafe('tab-consulta', 'click', () => {
                 showView('consulta-view');
                 applyFiltersAndRender();
             });
-            document.getElementById('tab-dashboard').addEventListener('click', () => {
+            addListenerSafe('tab-dashboard', 'click', () => {
                 showView('dashboard-view');
-                updateDashboardStats(); // Forzar actualización al entrar
+                updateDashboardStats(); 
             });
 
             // Botones
-            document.getElementById('btn-nuevo-paciente').addEventListener('click', () => {
+            addListenerSafe('btn-nuevo-paciente', 'click', () => {
                 resetForm();
                 showView('ingreso-view');
             });
 
             // Dashboard Selectors
-            document.getElementById('dash-month').addEventListener('change', updateDashboardStats);
-            document.getElementById('dash-year').addEventListener('change', updateDashboardStats);
+            addListenerSafe('dash-month', 'change', updateDashboardStats);
+            addListenerSafe('dash-year', 'change', updateDashboardStats);
 
             // Formularios
-            document.getElementById('patient-form').addEventListener('submit', handleFormSubmit);
-            document.getElementById('btn-cancelar-edicion').addEventListener('click', (e) => {
+            addListenerSafe('patient-form', 'submit', handleFormSubmit);
+            addListenerSafe('btn-cancelar-edicion', 'click', (e) => {
                 e.preventDefault();
                 resetForm();
                 showView('consulta-view');
             });
 
             // Modales
-            document.getElementById('btn-open-diag-modal').addEventListener('click', () => showDiagnosticoModal(true));
-            document.getElementById('btn-close-diag-modal').addEventListener('click', () => showDiagnosticoModal(false));
-            document.getElementById('btn-save-diag-modal').addEventListener('click', saveDiagnosticosFromModal);
-            document.getElementById('diag-modal-search').addEventListener('input', renderDiagnosticoModalList);
-            document.getElementById('btn-add-new-diag').addEventListener('click', addNewDiagnostico);
+            addListenerSafe('btn-open-diag-modal', 'click', () => showDiagnosticoModal(true));
+            addListenerSafe('btn-close-diag-modal', 'click', () => showDiagnosticoModal(false));
+            addListenerSafe('btn-save-diag-modal', 'click', saveDiagnosticosFromModal);
+            addListenerSafe('diag-modal-search', 'input', renderDiagnosticoModalList);
+            addListenerSafe('btn-add-new-diag', 'click', addNewDiagnostico);
             
-            document.getElementById('btn-cancel-delete').addEventListener('click', () => showDeleteModal(false));
-            document.getElementById('btn-confirm-delete').addEventListener('click', confirmDeletePatient);
+            addListenerSafe('btn-cancel-delete', 'click', () => showDeleteModal(false));
+            addListenerSafe('btn-confirm-delete', 'click', confirmDeletePatient);
 
             // Filtros
-            document.getElementById('search-general').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-date-start').addEventListener('change', applyFiltersAndRender);
-            document.getElementById('search-date-end').addEventListener('change', applyFiltersAndRender);
-            document.getElementById('search-eg-start').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-eg-end').addEventListener('input', applyFiltersAndRender);
-            document.getElementById('search-patologia').addEventListener('change', applyFiltersAndRender);
-            // Listener para Procedencia
-            document.getElementById('search-procedencia').addEventListener('change', applyFiltersAndRender);
+            addListenerSafe('search-general', 'input', applyFiltersAndRender);
+            addListenerSafe('search-date-start', 'change', applyFiltersAndRender);
+            addListenerSafe('search-date-end', 'change', applyFiltersAndRender);
+            addListenerSafe('search-eg-start', 'input', applyFiltersAndRender);
+            addListenerSafe('search-eg-end', 'input', applyFiltersAndRender);
+            addListenerSafe('search-patologia', 'change', applyFiltersAndRender);
+            addListenerSafe('search-procedencia', 'change', applyFiltersAndRender);
+            addListenerSafe('search-only-interned', 'change', applyFiltersAndRender);
 
             // Exportar
-            document.getElementById('btn-export-filtered').addEventListener('click', () => exportToCsv(filteredPacientes, 'pacientes_neo_vista'));
-            document.getElementById('btn-export-all').addEventListener('click', handleExportAll); 
+            addListenerSafe('btn-export-filtered', 'click', () => exportToCsv(filteredPacientes, 'pacientes_neo_vista'));
+            addListenerSafe('btn-export-all', 'click', handleExportAll); 
             
             // Acciones tabla
-            document.getElementById('patient-list-container').addEventListener('click', handlePatientListClick);
+            addListenerSafe('patient-list-container', 'click', handlePatientListClick);
         }
 
         function showView(viewId) {
@@ -1140,8 +1158,10 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             const egEnd = parseFloat(document.getElementById('search-eg-end').value);
             const patologiaFilter = document.getElementById('search-patologia').value;
             const procedenciaFilter = document.getElementById('search-procedencia').value;
+            const onlyInternedEl = document.getElementById('search-only-interned');
+            const onlyInterned = onlyInternedEl ? onlyInternedEl.checked : false;
 
-            const hasFilters = (searchTerm && searchTerm.trim() !== '') || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter || procedenciaFilter;
+            const hasFilters = (searchTerm && searchTerm.trim() !== '') || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter || procedenciaFilter || onlyInterned;
 
             if (!hasFilters) {
                 try {
@@ -1159,6 +1179,7 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             showLoading(true, "Filtrando...");
             const qConstraints = []; 
 
+            if (onlyInterned) qConstraints.push(where("statusEgreso", "==", ""));
             if (patologiaFilter) qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
             if (procedenciaFilter) qConstraints.push(where("procedencia", "==", procedenciaFilter));
             if (dateStart) qConstraints.push(where("fechaNacimiento", ">=", dateStart));
@@ -1336,4 +1357,3 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
     </script>
 </body>
 </html>
-
