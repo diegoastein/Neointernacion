@@ -179,7 +179,7 @@
         <div id="ingreso-view" class="p-8 bg-white shadow-lg rounded-b-lg">
             <div class="flex justify-between items-center mb-6">
                 <h2 id="form-title" class="text-2xl font-semibold title-text">Nuevo Ingreso</h2>
-                <button type="button" id="btn-cancel-edicion" class="hidden btn-secondary text-sm py-2">Cancelar Edición</button>
+                <button type="button" id="btn-cancelar-edicion" class="hidden btn-secondary text-sm py-2">Cancelar Edición</button>
             </div>
             
             <form id="patient-form" class="space-y-6">
@@ -698,19 +698,29 @@
             const views = ['ingreso-view', 'consulta-view', 'dashboard-view'];
             const tabs = ['tab-ingreso', 'tab-consulta', 'tab-dashboard'];
 
-            // Ocultar todas las vistas y desactivar pestañas
+            // Scroll to top when switching views
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
             views.forEach((v, idx) => {
                 const el = document.getElementById(v);
                 const tab = document.getElementById(tabs[idx]);
                 
-                if (v === viewId) {
-                    el.classList.remove('hidden');
-                    tab.classList.add('active');
-                    tab.classList.remove('inactive');
-                } else {
-                    el.classList.add('hidden');
-                    tab.classList.remove('active');
-                    tab.classList.add('inactive');
+                if (el) {
+                    if (v === viewId) {
+                        el.classList.remove('hidden');
+                    } else {
+                        el.classList.add('hidden');
+                    }
+                }
+                
+                if (tab) {
+                    if (v === viewId) {
+                        tab.classList.add('active');
+                        tab.classList.remove('inactive');
+                    } else {
+                        tab.classList.remove('active');
+                        tab.classList.add('inactive');
+                    }
                 }
             });
         }
@@ -971,6 +981,9 @@
         function handlePatientListClick(e) {
             const button = e.target.closest('button');
             if (!button) return;
+            
+            // Prevent default button behavior just in case
+            e.preventDefault();
 
             const action = button.dataset.action;
             const id = button.dataset.id;
@@ -980,22 +993,35 @@
                 const patient = filteredPacientes.find(p => p.id === id);
                 if (patient) {
                     const form = document.getElementById('patient-form');
-                    form.nombre.value = patient.nombre || '';
-                    form.fechaNacimiento.value = patient.fechaNacimiento || '';
-                    form.peso.value = patient.peso || null;
-                    form.edadGestacional.value = patient.edadGestacional || null;
-                    form.procedencia.value = patient.procedencia || '';
-                    form.fechaInternacion.value = patient.fechaInternacion || '';
-                    form.fechaEgreso.value = patient.fechaEgreso || '';
-                    form.statusEgreso.value = patient.statusEgreso || '';
-                    selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
-                    updateSelectedDiagnosticosDisplay();
-                    
-                    editingPatientId = patient.id;
-                    document.getElementById('form-title').textContent = "Editando Paciente";
-                    document.getElementById('btn-submit-form').textContent = "Actualizar Datos";
-                    document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
-                    showView('ingreso-view');
+                    if(form) {
+                        form.nombre.value = patient.nombre || '';
+                        form.fechaNacimiento.value = patient.fechaNacimiento || '';
+                        // Use '' instead of null for safety
+                        form.peso.value = patient.peso || '';
+                        form.edadGestacional.value = patient.edadGestacional || '';
+                        form.procedencia.value = patient.procedencia || '';
+                        form.fechaInternacion.value = patient.fechaInternacion || '';
+                        form.fechaEgreso.value = patient.fechaEgreso || '';
+                        form.statusEgreso.value = patient.statusEgreso || '';
+                        
+                        selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+                        updateSelectedDiagnosticosDisplay();
+                        
+                        editingPatientId = patient.id;
+                        const titleEl = document.getElementById('form-title');
+                        if(titleEl) titleEl.textContent = "Editando Paciente";
+                        
+                        const btnSubmit = document.getElementById('btn-submit-form');
+                        if(btnSubmit) btnSubmit.textContent = "Actualizar Datos";
+                        
+                        const btnCancel = document.getElementById('btn-cancelar-edicion');
+                        if(btnCancel) btnCancel.classList.remove('hidden');
+                        
+                        showView('ingreso-view');
+                    }
+                } else {
+                    console.error("Paciente no encontrado en memoria local:", id);
+                    showToast("Error al cargar datos del paciente", "error");
                 }
             } else if (action === 'delete') {
                 patientToDeleteId = id;
