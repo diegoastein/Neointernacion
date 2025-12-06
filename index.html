@@ -276,7 +276,8 @@
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Nombre / Apellido</label>
-                            <input type="text" id="search-general" placeholder="Buscar..." class="form-input">
+                            <input type="text" id="search-general" placeholder="Buscar... (ej: Juan, Perez, Juan Pe...)" class="form-input">
+                            <p class="text-xs text-blue-400 mt-1 ml-1">* Búsqueda instantánea en cualquier orden</p>
                         </div>
                         <div>
                             <label class="block text-xs font-bold text-blue-600 uppercase mb-1">Patología</label>
@@ -348,7 +349,7 @@
             </div>
 
             <div id="patient-list-container" class="overflow-hidden rounded-lg border border-gray-200">
-                <div class="p-8 text-center text-gray-500">Cargando datos...</div>
+                <div class="p-8 text-center text-gray-500">Iniciando base de datos...</div>
             </div>
         </div>
 
@@ -516,6 +517,10 @@
         let app, auth, db, userId, appId;
         let pacientesCollectionRef, customDiagnosticosCollectionRef;
 
+        // NUEVO: Cache local para búsqueda instantánea
+        let allPatientsList = []; 
+        let isPatientsLoaded = false;
+
         let filteredPacientes = []; 
         let totalPatientCount = 0; 
         let baseDiagnosticos = []; 
@@ -528,6 +533,8 @@
 
         // Variable para la suscripción del Dashboard
         let unsubscribeDashboard = null;
+        // Variable para la suscripción principal de datos
+        let unsubscribePatients = null;
 
         // --- CONFIGURACIÓN DE FIREBASE ---
         let firebaseConfig;
@@ -578,13 +585,13 @@
                     customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
                     
                     loadCustomDiagnosticos(); 
-                    updateTotalPatientCount(); 
                     
+                    // NUEVO: Iniciar escucha de datos principales (con límite seguro para rendimiento)
+                    initDataListener();
+
                     // Inicializar Dashboard con fecha actual
                     initDashboard();
 
-                    // Cargar vista por defecto
-                    applyFiltersAndRender(); 
                     showLoading(false);
                     showView('ingreso-view'); 
                 } else {
@@ -596,7 +603,6 @@
                         }
                     } catch (error) {
                         console.warn("Fallo autenticación con token, intentando anónimo...", error);
-                        // Fallback: Si el token custom falla (ej. mismatch), intentar anónimo
                         try {
                             await signInAnonymously(auth);
                         } catch (anonError) {
@@ -609,17 +615,32 @@
             });
         }
 
-        async function updateTotalPatientCount() {
-            try {
-                const snapshot = await getCountFromServer(pacientesCollectionRef);
-                totalPatientCount = snapshot.data().count;
-                const counterEl = document.getElementById('patient-count');
-                if (counterEl && !document.getElementById('consulta-view').classList.contains('hidden')) {
-                     renderPatientList(filteredPacientes, false);
+        // --- NUEVA LÓGICA DE DATOS: CACHÉ LOCAL ---
+        
+        function initDataListener() {
+            // Escuchar los últimos 1000 pacientes para tener una base local rápida
+            // Esto permite búsqueda instantánea, filtrado complejo y mejora UX.
+            if (unsubscribePatients) unsubscribePatients();
+
+            const q = query(
+                pacientesCollectionRef, 
+                orderBy("fechaInternacion", "desc"),
+                limit(1000) // Límite de seguridad
+            );
+
+            unsubscribePatients = onSnapshot(q, (snapshot) => {
+                allPatientsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                isPatientsLoaded = true;
+                totalPatientCount = allPatientsList.length; // Aproximado para la vista actual
+                
+                // Actualizar contador global si estamos en vista consulta
+                if (!document.getElementById('consulta-view').classList.contains('hidden')) {
+                    processLocalFilters();
                 }
-            } catch (error) {
-                console.error("Error al obtener el conteo total:", error);
-            }
+            }, (error) => {
+                console.error("Error cargando pacientes:", error);
+                showToast("Error de conexión a datos", "error");
+            });
         }
 
         function loadCustomDiagnosticos() {
@@ -647,7 +668,7 @@
             addListenerSafe('tab-ingreso', 'click', () => showView('ingreso-view'));
             addListenerSafe('tab-consulta', 'click', () => {
                 showView('consulta-view');
-                applyFiltersAndRender();
+                processLocalFilters(); // Aplicar filtros al entrar
             });
             addListenerSafe('tab-dashboard', 'click', () => {
                 showView('dashboard-view');
@@ -682,15 +703,15 @@
             addListenerSafe('btn-cancel-delete', 'click', () => showDeleteModal(false));
             addListenerSafe('btn-confirm-delete', 'click', confirmDeletePatient);
 
-            // Filtros
-            addListenerSafe('search-general', 'input', applyFiltersAndRender);
-            addListenerSafe('search-date-start', 'change', applyFiltersAndRender);
-            addListenerSafe('search-date-end', 'change', applyFiltersAndRender);
-            addListenerSafe('search-eg-start', 'input', applyFiltersAndRender);
-            addListenerSafe('search-eg-end', 'input', applyFiltersAndRender);
-            addListenerSafe('search-patologia', 'change', applyFiltersAndRender);
-            addListenerSafe('search-procedencia', 'change', applyFiltersAndRender);
-            addListenerSafe('search-only-interned', 'change', applyFiltersAndRender);
+            // Filtros - AHORA USAN processLocalFilters para velocidad
+            addListenerSafe('search-general', 'input', processLocalFilters);
+            addListenerSafe('search-date-start', 'change', processLocalFilters);
+            addListenerSafe('search-date-end', 'change', processLocalFilters);
+            addListenerSafe('search-eg-start', 'input', processLocalFilters);
+            addListenerSafe('search-eg-end', 'input', processLocalFilters);
+            addListenerSafe('search-patologia', 'change', processLocalFilters);
+            addListenerSafe('search-procedencia', 'change', processLocalFilters);
+            addListenerSafe('search-only-interned', 'change', processLocalFilters);
 
             // Exportar
             addListenerSafe('btn-export-filtered', 'click', () => exportToCsv(filteredPacientes, 'pacientes_neo_vista'));
@@ -811,8 +832,6 @@
                 endStr = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
             }
 
-            console.log(`Actualizando Dashboard para: ${startStr} al ${endStr}`);
-
             // Cancelar suscripción anterior si existe
             if (unsubscribeDashboard) {
                 unsubscribeDashboard();
@@ -932,6 +951,7 @@
             const form = e.target;
             
             const nombreOriginal = form.nombre.value;
+            // Generamos keywords para búsqueda futura si volvemos a búsqueda server-side
             const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
 
             const patientData = {
@@ -958,13 +978,13 @@
                     patientData.createdAt = new Date().toISOString(); 
                     patientData.createdBy = userId;
                     await addDoc(pacientesCollectionRef, patientData);
-                    updateTotalPatientCount();
+                    // No necesitamos llamar updateTotalPatientCount porque el listener onSnapshot lo hará
                     showToast("Paciente ingresado", "success");
                 }
                 
                 resetForm();
                 showView('consulta-view');
-                applyFiltersAndRender();
+                // processLocalFilters se ejecutará automáticamente por el listener onSnapshot
                 
             } catch (error) {
                 console.error("Error al guardar:", error);
@@ -1072,7 +1092,7 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             try {
                 const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
                 await deleteDoc(patientRef);
-                updateTotalPatientCount();
+                // onSnapshot se encarga de actualizar la UI
                 showToast("Paciente eliminado", "success");
             } catch (error) {
                 console.error("Error al borrar:", error);
@@ -1080,7 +1100,6 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             } finally {
                 showDeleteModal(false);
                 showLoading(false);
-                applyFiltersAndRender();
             }
         }
 
@@ -1179,11 +1198,14 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             }
         }
 
-        async function applyFiltersAndRender() {
-            const searchInput = document.getElementById('search-general');
-            if (!searchInput) return;
+        // --- NUEVA LÓGICA DE FILTRADO (CLIENT-SIDE) ---
 
-            const searchTerm = searchInput.value.toLowerCase(); 
+        function processLocalFilters() {
+            if (!isPatientsLoaded) return;
+
+            const searchInput = document.getElementById('search-general');
+            const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+            
             const dateStart = document.getElementById('search-date-start').value;
             const dateEnd = document.getElementById('search-date-end').value;
             const egStart = parseFloat(document.getElementById('search-eg-start').value);
@@ -1195,65 +1217,64 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
 
             const hasFilters = (searchTerm && searchTerm.trim() !== '') || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter || procedenciaFilter || onlyInterned;
 
-            if (!hasFilters) {
-                try {
-                    const q = query(pacientesCollectionRef, orderBy("createdAt", "desc"), limit(3));
-                    const querySnapshot = await getDocs(q);
-                    filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                    renderPatientList(filteredPacientes, false);
-                } catch (error) {
-                    console.error("Error:", error);
-                    renderPatientList([], false);
+            // Filtrado en memoria: Rápido y Flexible
+            filteredPacientes = allPatientsList.filter(p => {
+                // 1. Filtro Internados (Activos)
+                if (onlyInterned && p.statusEgreso !== '') return false;
+                
+                // 2. Filtro Procedencia
+                if (procedenciaFilter && p.procedencia !== procedenciaFilter) return false;
+                
+                // 3. Filtro Patología (array contains)
+                if (patologiaFilter) {
+                    if (!p.diagnosticos || !p.diagnosticos.includes(patologiaFilter)) return false;
                 }
-                return;
-            }
+                
+                // 4. Fechas
+                if (dateStart && (!p.fechaNacimiento || p.fechaNacimiento < dateStart)) return false;
+                if (dateEnd && (!p.fechaNacimiento || p.fechaNacimiento > dateEnd)) return false;
 
-            showLoading(true, "Filtrando...");
-            const qConstraints = []; 
+                // 5. Edad Gestacional
+                const eg = p.edadGestacional;
+                if (!isNaN(egStart) && (eg === undefined || eg < egStart)) return false;
+                if (!isNaN(egEnd) && (eg === undefined || eg > egEnd)) return false;
 
-            if (onlyInterned) qConstraints.push(where("statusEgreso", "==", ""));
-            if (patologiaFilter) qConstraints.push(where("diagnosticos", "array-contains", patologiaFilter));
-            if (procedenciaFilter) qConstraints.push(where("procedencia", "==", procedenciaFilter));
-            if (dateStart) qConstraints.push(where("fechaNacimiento", ">=", dateStart));
-            if (dateEnd) qConstraints.push(where("fechaNacimiento", "<=", dateEnd));
-            if (!isNaN(egStart)) qConstraints.push(where("edadGestacional", ">=", egStart));
-            if (!isNaN(egEnd)) qConstraints.push(where("edadGestacional", "<=", egEnd));
-            
-            if (searchTerm) {
-                const searchKeywords = searchTerm.split(' ').filter(kw => kw.length > 0);
-                searchKeywords.forEach(kw => {
-                    qConstraints.push(where("nombre_keywords", "array-contains", kw));
-                });
-            }
-            
-            try {
-                const q = query(pacientesCollectionRef, ...qConstraints);
-                const querySnapshot = await getDocs(q);
-                filteredPacientes = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                // 6. NOMBRE: Búsqueda parcial y flexible ("juan per" encuentra "Perez Juan")
+                if (searchTerm) {
+                    const name = (p.nombre || '').toLowerCase();
+                    // Dividimos lo que escribe el usuario por espacios
+                    const searchTerms = searchTerm.split(' ').filter(t => t.length > 0);
+                    // Verificamos que TODAS las palabras escritas estén en el nombre
+                    const matchesAll = searchTerms.every(term => name.includes(term));
+                    if (!matchesAll) return false;
+                }
+
+                return true;
+            });
+
+            if (!hasFilters) {
+                // Si no hay filtros, mostramos solo los últimos 3 (asumiendo orden descendente por defecto)
+                renderPatientList(filteredPacientes.slice(0, 3), false);
+            } else {
                 renderPatientList(filteredPacientes, true);
-            } catch (error) {
-                console.error("Error en consulta:", error);
-                showToast("Error en búsqueda (falta índice)", "error");
-            } finally {
-                showLoading(false);
             }
         }
 
-        function renderPatientList(pacientes, hasFilter) {
+        function renderPatientList(pacientes, isFiltered) {
             const listContainer = document.getElementById('patient-list-container');
             const counterEl = document.getElementById('patient-count');
             
             if (!listContainer || !counterEl) return;
             const total = totalPatientCount || 0;
 
-            if (hasFilter) {
-                counterEl.innerHTML = `Total: <b>${total}</b> | Filtrados: <b>${pacientes.length}</b>`;
+            if (isFiltered) {
+                counterEl.innerHTML = `Base de datos: <b>${total}</b> (recientes) | Resultado: <b>${pacientes.length}</b>`;
             } else {
-                counterEl.innerHTML = `Total Histórico: <b>${total}</b> (Mostrando últimos ${pacientes.length})`;
+                counterEl.innerHTML = `Total Cargados: <b>${total}</b> (Mostrando últimos ${pacientes.length})`;
             }
             
             if ((!pacientes || pacientes.length === 0)) {
-                listContainer.innerHTML = '<div class="p-8 text-center text-gray-400 bg-gray-50">No se encontraron pacientes.</div>';
+                listContainer.innerHTML = '<div class="p-8 text-center text-gray-400 bg-gray-50">No se encontraron pacientes que coincidan con la búsqueda.</div>';
                 return;
             }
             
@@ -1339,7 +1360,10 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
         async function handleExportAll() {
             showLoading(true, "Exportando Todo...");
             try {
-                const snapshot = await getDocs(pacientesCollectionRef);
+                // Si tenemos la data en memoria y no supera el límite de 1000, podemos usarla
+                // Pero para "Export Todo" siempre es mejor asegurar un fetch fresco completo si es crítico
+                // Para este caso, usamos getDocs para asegurar TODA la base de datos histórica
+                const snapshot = await getDocs(query(pacientesCollectionRef, orderBy('createdAt', 'desc')));
                 const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 exportToCsv(all, 'pacientes_neo_total_db');
             } catch (error) {
