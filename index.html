@@ -345,7 +345,7 @@
             </div>
 
             <div class="md:hidden text-right mb-2 text-sm text-blue-600 italic animate-pulse">
-                &larr; Desliza la tabla para ver acciones &rarr;
+                &larr; Desliza la tabla para ver detalles de fechas &rarr;
             </div>
 
             <div id="patient-list-container" class="overflow-hidden rounded-lg border border-gray-200">
@@ -407,6 +407,11 @@
                                 <p id="stat-avg-eg" class="text-2xl font-bold text-gray-800 mt-1">-</p>
                                 <span class="text-xs text-gray-400">semanas</span>
                             </div>
+                            <div class="border-l border-gray-200 pl-8">
+                                <p class="text-sm text-gray-500 uppercase font-bold">Estadía</p>
+                                <p id="stat-avg-dias" class="text-2xl font-bold text-gray-800 mt-1">-</p>
+                                <span class="text-xs text-gray-400">prom. días</span>
+                            </div>
                         </div>
                     </div>
                     
@@ -460,7 +465,7 @@
     </div>
 
     <div id="delete-modal" class="hidden fixed inset-0 bg-red-900 bg-opacity-20 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
-        <div class="bg-white rounded-lg shadow-xl max-w-sm w-full p-6 text-center">
+        <div class="bg-white rounded-lg shadow-xl max-sm w-full p-6 text-center">
             <div class="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-red-100 mb-4">
                 <svg class="h-6 w-6 text-red-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
             </div>
@@ -517,7 +522,7 @@
         let app, auth, db, userId, appId;
         let pacientesCollectionRef, customDiagnosticosCollectionRef;
 
-        // NUEVO: Cache local para búsqueda instantánea
+        // Cache local para búsqueda instantánea
         let allPatientsList = []; 
         let isPatientsLoaded = false;
 
@@ -562,7 +567,6 @@
             app = initializeApp(firebaseConfig);
             db = getFirestore(app);
             auth = getAuth(app);
-            setLogLevel('Debug'); 
 
             populateBaseDiagnosticos();
             setupUIListeners();
@@ -576,7 +580,6 @@
             onAuthStateChanged(auth, async (user) => {
                 if (user) {
                     userId = user.uid;
-                    console.log("Usuario autenticado:", userId);
                     const userDisplay = document.getElementById('user-id-display');
                     if(userDisplay) userDisplay.textContent = `ID: ${userId.substring(0,6)}...`;
 
@@ -585,11 +588,7 @@
                     customDiagnosticosCollectionRef = collection(db, `${publicDataPath}/diagnosticos_custom`);
                     
                     loadCustomDiagnosticos(); 
-                    
-                    // NUEVO: Iniciar escucha de datos principales (con límite seguro para rendimiento)
                     initDataListener();
-
-                    // Inicializar Dashboard con fecha actual
                     initDashboard();
 
                     showLoading(false);
@@ -602,11 +601,9 @@
                             await signInAnonymously(auth);
                         }
                     } catch (error) {
-                        console.warn("Fallo autenticación con token, intentando anónimo...", error);
                         try {
                             await signInAnonymously(auth);
                         } catch (anonError) {
-                            console.error("Error de autenticación final:", anonError);
                             showLoading(false);
                             showToast("Error de autenticación.", 'error');
                         }
@@ -615,25 +612,20 @@
             });
         }
 
-        // --- NUEVA LÓGICA DE DATOS: CACHÉ LOCAL ---
-        
         function initDataListener() {
-            // Escuchar los últimos 1000 pacientes para tener una base local rápida
-            // Esto permite búsqueda instantánea, filtrado complejo y mejora UX.
             if (unsubscribePatients) unsubscribePatients();
 
             const q = query(
                 pacientesCollectionRef, 
                 orderBy("fechaInternacion", "desc"),
-                limit(1000) // Límite de seguridad
+                limit(1000) 
             );
 
             unsubscribePatients = onSnapshot(q, (snapshot) => {
                 allPatientsList = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 isPatientsLoaded = true;
-                totalPatientCount = allPatientsList.length; // Aproximado para la vista actual
+                totalPatientCount = allPatientsList.length; 
                 
-                // Actualizar contador global si estamos en vista consulta
                 if (!document.getElementById('consulta-view').classList.contains('hidden')) {
                     processLocalFilters();
                 }
@@ -658,34 +650,28 @@
             const el = document.getElementById(id);
             if (el) {
                 el.addEventListener(event, handler);
-            } else {
-                console.warn(`Elemento UI no encontrado: ${id}`);
             }
         }
 
         function setupUIListeners() {
-            // Pestañas
             addListenerSafe('tab-ingreso', 'click', () => showView('ingreso-view'));
             addListenerSafe('tab-consulta', 'click', () => {
                 showView('consulta-view');
-                processLocalFilters(); // Aplicar filtros al entrar
+                processLocalFilters();
             });
             addListenerSafe('tab-dashboard', 'click', () => {
                 showView('dashboard-view');
                 updateDashboardStats(); 
             });
 
-            // Botones
             addListenerSafe('btn-nuevo-paciente', 'click', () => {
                 resetForm();
                 showView('ingreso-view');
             });
 
-            // Dashboard Selectors
             addListenerSafe('dash-month', 'change', updateDashboardStats);
             addListenerSafe('dash-year', 'change', updateDashboardStats);
 
-            // Formularios
             addListenerSafe('patient-form', 'submit', handleFormSubmit);
             addListenerSafe('btn-cancelar-edicion', 'click', (e) => {
                 e.preventDefault();
@@ -693,7 +679,6 @@
                 showView('consulta-view');
             });
 
-            // Modales
             addListenerSafe('btn-open-diag-modal', 'click', () => showDiagnosticoModal(true));
             addListenerSafe('btn-close-diag-modal', 'click', () => showDiagnosticoModal(false));
             addListenerSafe('btn-save-diag-modal', 'click', saveDiagnosticosFromModal);
@@ -703,7 +688,6 @@
             addListenerSafe('btn-cancel-delete', 'click', () => showDeleteModal(false));
             addListenerSafe('btn-confirm-delete', 'click', confirmDeletePatient);
 
-            // Filtros - AHORA USAN processLocalFilters para velocidad
             addListenerSafe('search-general', 'input', processLocalFilters);
             addListenerSafe('search-date-start', 'change', processLocalFilters);
             addListenerSafe('search-date-end', 'change', processLocalFilters);
@@ -713,11 +697,9 @@
             addListenerSafe('search-procedencia', 'change', processLocalFilters);
             addListenerSafe('search-only-interned', 'change', processLocalFilters);
 
-            // Exportar
             addListenerSafe('btn-export-filtered', 'click', () => exportToCsv(filteredPacientes, 'pacientes_neo_vista'));
             addListenerSafe('btn-export-all', 'click', handleExportAll); 
             
-            // Acciones tabla
             addListenerSafe('patient-list-container', 'click', handlePatientListClick);
         }
 
@@ -725,7 +707,6 @@
             const views = ['ingreso-view', 'consulta-view', 'dashboard-view'];
             const tabs = ['tab-ingreso', 'tab-consulta', 'tab-dashboard'];
 
-            // Scroll to top when switching views
             window.scrollTo({ top: 0, behavior: 'smooth' });
 
             views.forEach((v, idx) => {
@@ -768,7 +749,6 @@
             const toastMessage = document.getElementById('toast-message');
             
             toastMessage.textContent = message;
-            
             toast.className = "fixed bottom-5 right-5 max-w-sm w-full bg-white border-l-4 p-4 rounded shadow-lg flex items-center transition-all duration-500 z-50 transform";
             
             if (type === 'success') {
@@ -795,9 +775,8 @@
         function initDashboard() {
             const now = new Date();
             const currentYear = now.getFullYear();
-            const currentMonth = now.getMonth() + 1; // JS months are 0-indexed
+            const currentMonth = now.getMonth() + 1;
 
-            // Llenar selector de años (Actual - 2 hasta Actual + 2)
             const yearSelect = document.getElementById('dash-year');
             yearSelect.innerHTML = '';
             for (let y = currentYear - 2; y <= currentYear + 2; y++) {
@@ -808,10 +787,7 @@
                 yearSelect.appendChild(opt);
             }
 
-            // Setear mes actual
             document.getElementById('dash-month').value = currentMonth;
-
-            // Iniciar listener
             updateDashboardStats();
         }
 
@@ -822,22 +798,18 @@
             let startStr, endStr;
 
             if (month === 0) {
-                // Año Completo
                 startStr = `${year}-01-01`;
                 endStr = `${year}-12-31`;
             } else {
-                // Mes Específico
                 startStr = `${year}-${String(month).padStart(2, '0')}-01`;
                 const lastDay = new Date(year, month, 0).getDate();
                 endStr = `${year}-${String(month).padStart(2, '0')}-${lastDay}`;
             }
 
-            // Cancelar suscripción anterior si existe
             if (unsubscribeDashboard) {
                 unsubscribeDashboard();
             }
 
-            // Usar 'fechaInternacion' como criterio principal para "Ingresos del periodo"
             const q = query(
                 pacientesCollectionRef, 
                 where("fechaInternacion", ">=", startStr),
@@ -853,7 +825,6 @@
         }
 
         function calculateAndRenderStats(pacientes) {
-            // 1. Contadores Básicos
             const total = pacientes.length;
             const altas = pacientes.filter(p => p.statusEgreso === 'Alta').length;
             const obitos = pacientes.filter(p => p.statusEgreso === 'Obito').length;
@@ -864,11 +835,7 @@
             document.getElementById('stat-obitos').textContent = obitos;
             document.getElementById('stat-derivaciones').textContent = derivaciones;
 
-            // 2. Promedios (Peso y EG)
-            let sumPeso = 0;
-            let countPeso = 0;
-            let sumEG = 0;
-            let countEG = 0;
+            let sumPeso = 0, countPeso = 0, sumEG = 0, countEG = 0, sumDias = 0, countDias = 0;
             let allDiags = [];
 
             pacientes.forEach(p => {
@@ -880,6 +847,13 @@
                     sumEG += Number(p.edadGestacional);
                     countEG++;
                 }
+                if (p.fechaInternacion) {
+                    const dias = calculateDays(p.fechaInternacion, p.fechaEgreso);
+                    if (dias !== '-') {
+                        sumDias += dias;
+                        countDias++;
+                    }
+                }
                 if (Array.isArray(p.diagnosticos)) {
                     allDiags.push(...p.diagnosticos);
                 }
@@ -887,17 +861,15 @@
 
             const avgPeso = countPeso > 0 ? Math.round(sumPeso / countPeso) : '-';
             const avgEG = countEG > 0 ? (sumEG / countEG).toFixed(1) : '-';
+            const avgDias = countDias > 0 ? (sumDias / countDias).toFixed(1) : '-';
 
             document.getElementById('stat-avg-peso').textContent = avgPeso;
             document.getElementById('stat-avg-eg').textContent = avgEG;
+            document.getElementById('stat-avg-dias').textContent = avgDias;
 
-            // 3. Top 5 Diagnósticos
             const diagCounts = {};
-            allDiags.forEach(d => {
-                diagCounts[d] = (diagCounts[d] || 0) + 1;
-            });
+            allDiags.forEach(d => { diagCounts[d] = (diagCounts[d] || 0) + 1; });
 
-            // Convertir a array, ordenar y tomar top 5
             const sortedDiags = Object.entries(diagCounts)
                 .sort((a, b) => b[1] - a[1])
                 .slice(0, 5);
@@ -949,17 +921,15 @@
             showLoading(true, "Guardando...");
 
             const form = e.target;
-            
             const nombreOriginal = form.nombre.value;
-            // Generamos keywords para búsqueda futura si volvemos a búsqueda server-side
             const keywords = nombreOriginal.toLowerCase().split(' ').filter(kw => kw.length > 0);
 
             const patientData = {
                 nombre: nombreOriginal,
                 nombre_keywords: keywords, 
                 fechaNacimiento: form.fechaNacimiento.value,
-                peso: form.peso.valueAsNumber,
-                edadGestacional: form.edadGestacional.valueAsNumber,
+                peso: form.peso.valueAsNumber || 0,
+                edadGestacional: form.edadGestacional.valueAsNumber || 0,
                 procedencia: form.procedencia.value,
                 fechaInternacion: form.fechaInternacion.value,
                 fechaEgreso: form.fechaEgreso.value,
@@ -978,14 +948,11 @@
                     patientData.createdAt = new Date().toISOString(); 
                     patientData.createdBy = userId;
                     await addDoc(pacientesCollectionRef, patientData);
-                    // No necesitamos llamar updateTotalPatientCount porque el listener onSnapshot lo hará
                     showToast("Paciente ingresado", "success");
                 }
                 
                 resetForm();
                 showView('consulta-view');
-                // processLocalFilters se ejecutará automáticamente por el listener onSnapshot
-                
             } catch (error) {
                 console.error("Error al guardar:", error);
                 showToast("Error al guardar.", "error");
@@ -1007,8 +974,6 @@
         function handlePatientListClick(e) {
             const button = e.target.closest('button');
             if (!button) return;
-            
-            // Prevent default button behavior just in case
             e.preventDefault();
 
             const action = button.dataset.action;
@@ -1016,86 +981,73 @@
             const name = button.dataset.name;
 
             if (action === 'edit') {
-                const patient = filteredPacientes.find(p => p.id === id);
+                const patient = allPatientsList.find(p => p.id === id);
                 if (patient) {
                     const form = document.getElementById('patient-form');
-                    if(form) {
-                        form.nombre.value = patient.nombre || '';
-                        form.fechaNacimiento.value = patient.fechaNacimiento || '';
-                        // Use '' instead of null for safety
-                        form.peso.value = patient.peso || '';
-                        form.edadGestacional.value = patient.edadGestacional || '';
-                        form.procedencia.value = patient.procedencia || '';
-                        form.fechaInternacion.value = patient.fechaInternacion || '';
-                        form.fechaEgreso.value = patient.fechaEgreso || '';
-                        form.statusEgreso.value = patient.statusEgreso || '';
-                        
-                        selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
-                        updateSelectedDiagnosticosDisplay();
-                        
-                        editingPatientId = patient.id;
-                        const titleEl = document.getElementById('form-title');
-                        if(titleEl) titleEl.textContent = "Editando Paciente";
-                        
-                        const btnSubmit = document.getElementById('btn-submit-form');
-                        if(btnSubmit) btnSubmit.textContent = "Actualizar Datos";
-                        
-                        const btnCancel = document.getElementById('btn-cancelar-edicion');
-                        if(btnCancel) btnCancel.classList.remove('hidden');
-                        
-                        showView('ingreso-view');
-                    }
-                } else {
-                    console.error("Paciente no encontrado en memoria local:", id);
-                    showToast("Error al cargar datos del paciente", "error");
+                    form.nombre.value = patient.nombre || '';
+                    form.fechaNacimiento.value = patient.fechaNacimiento || '';
+                    form.peso.value = patient.peso || '';
+                    form.edadGestacional.value = patient.edadGestacional || '';
+                    form.procedencia.value = patient.procedencia || '';
+                    form.fechaInternacion.value = patient.fechaInternacion || '';
+                    form.fechaEgreso.value = patient.fechaEgreso || '';
+                    form.statusEgreso.value = patient.statusEgreso || '';
+                    
+                    selectedDiagnosticos = Array.isArray(patient.diagnosticos) ? [...patient.diagnosticos] : [];
+                    updateSelectedDiagnosticosDisplay();
+                    
+                    editingPatientId = patient.id;
+                    document.getElementById('form-title').textContent = "Editando Paciente";
+                    document.getElementById('btn-submit-form').textContent = "Actualizar Datos";
+                    document.getElementById('btn-cancelar-edicion').classList.remove('hidden');
+                    
+                    showView('ingreso-view');
                 }
             } else if (action === 'delete') {
                 patientToDeleteId = id;
                 showDeleteModal(true, name);
             } else if (action === 'share') { 
-                const patient = filteredPacientes.find(p => p.id === id);
+                const patient = allPatientsList.find(p => p.id === id);
                 if (patient) sharePatientSummary(patient);
             }
         }
 
+        function formatDateDisplay(dateStr) {
+            if (!dateStr || dateStr === '-') return '-';
+            // dateStr comes in YYYY-MM-DD from HTML5 date inputs
+            const parts = dateStr.split('-');
+            if (parts.length !== 3) return dateStr;
+            return `${parts[2]}/${parts[1]}/${parts[0]}`;
+        }
+
         function sharePatientSummary(patient) {
+            const dias = calculateDays(patient.fechaInternacion, patient.fechaEgreso);
             const summary = `
 *FICHA NEONATOLOGÍA*
 👤 *${patient.nombre || 'N/A'}*
-📅 Nac: ${patient.fechaNacimiento || 'N/A'}
-⚖️ Peso: ${patient.peso ? `${patient.peso}gr` : 'N/A'} | EG: ${patient.edadGestacional ? `${patient.edadGestacional}sem` : 'N/A'}
-🏥 Procedencia: ${patient.procedencia || 'N/A'}
+📅 Nac: ${formatDateDisplay(patient.fechaNacimiento)}
+🏥 Internación: ${formatDateDisplay(patient.fechaInternacion)}
+🚪 Alta: ${formatDateDisplay(patient.fechaEgreso) || '(Internado)'}
+⏳ Días Internación: ${dias !== '-' ? dias : 'N/A'}
 🏷️ Status: ${patient.statusEgreso || 'Internado'}
-
-📋 *Diagnósticos:*
-${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patient.diagnosticos.join(', ') : 'S/D'}
+📋 Diagnósticos: ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patient.diagnosticos.join(', ') : 'S/D'}
 `;
             
             navigator.clipboard.writeText(summary).then(() => {
-                showToast("Ficha copiada al portapapeles", 'success');
-            }).catch(err => {
-                // Fallback
-                const textarea = document.createElement('textarea');
-                textarea.value = summary;
-                document.body.appendChild(textarea);
-                textarea.select();
-                document.execCommand('copy');
-                document.body.removeChild(textarea);
                 showToast("Ficha copiada", 'success');
+            }).catch(() => {
+                showToast("Error al copiar", 'error');
             });
         }
 
         async function confirmDeletePatient() {
             if (!patientToDeleteId) return;
-            
             showLoading(true, "Borrando...");
             try {
                 const patientRef = doc(db, `artifacts/${appId}/public/data/pacientes`, patientToDeleteId);
                 await deleteDoc(patientRef);
-                // onSnapshot se encarga de actualizar la UI
                 showToast("Paciente eliminado", "success");
             } catch (error) {
-                console.error("Error al borrar:", error);
                 showToast("Error al eliminar.", "error");
             } finally {
                 showDeleteModal(false);
@@ -1105,28 +1057,21 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
 
         function updateAllDiagnosticosList() {
             allDiagnosticos = [...baseDiagnosticos, ...customDiagnosticos].sort();
-            
             const selectPatologia = document.getElementById('search-patologia');
             const currentValue = selectPatologia.value; 
-            
             selectPatologia.innerHTML = '<option value="">-- Todas las Patologías --</option>';
-            
             allDiagnosticos.forEach(diag => {
                 const option = document.createElement('option');
-                option.value = diag;
-                option.textContent = diag;
+                option.value = diag; option.textContent = diag;
                 selectPatologia.appendChild(option);
             });
-            
             selectPatologia.value = currentValue;
         }
 
         function renderDiagnosticoModalList() {
             const listContainer = document.getElementById('diag-modal-list');
             const filter = document.getElementById('diag-modal-search').value.toLowerCase();
-            
             listContainer.innerHTML = '';
-            
             const diagnosToShow = allDiagnosticos.filter(d => d.toLowerCase().includes(filter));
             
             if (diagnosToShow.length === 0) {
@@ -1156,7 +1101,6 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
                         selectedDiagnosticos = selectedDiagnosticos.filter(d => d !== name);
                     }
                 });
-                
                 listContainer.appendChild(li);
             });
         }
@@ -1180,14 +1124,11 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
         async function addNewDiagnostico() {
             const input = document.getElementById('diag-modal-new-diag');
             const newDiagName = input.value.trim();
-            
             if (!newDiagName) return;
-            
             if (allDiagnosticos.some(d => d.toLowerCase() === newDiagName.toLowerCase())) {
                 showToast("Ya existe ese diagnóstico", "warn");
                 return;
             }
-            
             try {
                 await addDoc(customDiagnosticosCollectionRef, { nombre: newDiagName });
                 input.value = '';
@@ -1198,83 +1139,61 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
             }
         }
 
-        // --- NUEVA LÓGICA DE FILTRADO (CLIENT-SIDE) ---
+        // --- FILTRADO (CLIENT-SIDE) ---
 
         function processLocalFilters() {
             if (!isPatientsLoaded) return;
 
-            const searchInput = document.getElementById('search-general');
-            const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
-            
+            const searchTerm = document.getElementById('search-general').value.toLowerCase();
             const dateStart = document.getElementById('search-date-start').value;
             const dateEnd = document.getElementById('search-date-end').value;
             const egStart = parseFloat(document.getElementById('search-eg-start').value);
             const egEnd = parseFloat(document.getElementById('search-eg-end').value);
             const patologiaFilter = document.getElementById('search-patologia').value;
             const procedenciaFilter = document.getElementById('search-procedencia').value;
-            const onlyInternedEl = document.getElementById('search-only-interned');
-            const onlyInterned = onlyInternedEl ? onlyInternedEl.checked : false;
+            const onlyInterned = document.getElementById('search-only-interned').checked;
 
-            const hasFilters = (searchTerm && searchTerm.trim() !== '') || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter || procedenciaFilter || onlyInterned;
+            const hasFilters = searchTerm || dateStart || dateEnd || !isNaN(egStart) || !isNaN(egEnd) || patologiaFilter || procedenciaFilter || onlyInterned;
 
-            // Filtrado en memoria: Rápido y Flexible
             filteredPacientes = allPatientsList.filter(p => {
-                // 1. Filtro Internados (Activos)
                 if (onlyInterned && p.statusEgreso !== '') return false;
-                
-                // 2. Filtro Procedencia
                 if (procedenciaFilter && p.procedencia !== procedenciaFilter) return false;
-                
-                // 3. Filtro Patología (array contains)
-                if (patologiaFilter) {
-                    if (!p.diagnosticos || !p.diagnosticos.includes(patologiaFilter)) return false;
-                }
-                
-                // 4. Fechas
+                if (patologiaFilter && (!p.diagnosticos || !p.diagnosticos.includes(patologiaFilter))) return false;
                 if (dateStart && (!p.fechaNacimiento || p.fechaNacimiento < dateStart)) return false;
                 if (dateEnd && (!p.fechaNacimiento || p.fechaNacimiento > dateEnd)) return false;
-
-                // 5. Edad Gestacional
                 const eg = p.edadGestacional;
                 if (!isNaN(egStart) && (eg === undefined || eg < egStart)) return false;
                 if (!isNaN(egEnd) && (eg === undefined || eg > egEnd)) return false;
-
-                // 6. NOMBRE: Búsqueda parcial y flexible ("juan per" encuentra "Perez Juan")
                 if (searchTerm) {
                     const name = (p.nombre || '').toLowerCase();
-                    // Dividimos lo que escribe el usuario por espacios
                     const searchTerms = searchTerm.split(' ').filter(t => t.length > 0);
-                    // Verificamos que TODAS las palabras escritas estén en el nombre
-                    const matchesAll = searchTerms.every(term => name.includes(term));
-                    if (!matchesAll) return false;
+                    if (!searchTerms.every(term => name.includes(term))) return false;
                 }
-
                 return true;
             });
 
-            if (!hasFilters) {
-                // Si no hay filtros, mostramos solo los últimos 3 (asumiendo orden descendente por defecto)
-                renderPatientList(filteredPacientes.slice(0, 3), false);
-            } else {
-                renderPatientList(filteredPacientes, true);
-            }
+            renderPatientList(filteredPacientes, hasFilters);
+        }
+
+        function calculateDays(fInternacion, fEgreso) {
+            if (!fInternacion) return '-';
+            const start = new Date(fInternacion + 'T00:00:00');
+            const end = fEgreso ? new Date(fEgreso + 'T00:00:00') : new Date();
+            const diffTime = end - start;
+            return Math.max(0, Math.floor(diffTime / (1000 * 60 * 60 * 24)));
         }
 
         function renderPatientList(pacientes, isFiltered) {
             const listContainer = document.getElementById('patient-list-container');
             const counterEl = document.getElementById('patient-count');
-            
             if (!listContainer || !counterEl) return;
-            const total = totalPatientCount || 0;
-
-            if (isFiltered) {
-                counterEl.innerHTML = `Base de datos: <b>${total}</b> (recientes) | Resultado: <b>${pacientes.length}</b>`;
-            } else {
-                counterEl.innerHTML = `Total Cargados: <b>${total}</b> (Mostrando últimos ${pacientes.length})`;
-            }
             
-            if ((!pacientes || pacientes.length === 0)) {
-                listContainer.innerHTML = '<div class="p-8 text-center text-gray-400 bg-gray-50">No se encontraron pacientes que coincidan con la búsqueda.</div>';
+            // Ajustado a mostrar solo 3 registros por defecto si no hay filtros
+            const listToShow = isFiltered ? pacientes : pacientes.slice(0, 3);
+            counterEl.innerHTML = `Base de datos: <b>${totalPatientCount}</b> | Mostrando: <b>${listToShow.length}</b>`;
+            
+            if (listToShow.length === 0) {
+                listContainer.innerHTML = '<div class="p-8 text-center text-gray-400 bg-gray-50">No hay registros coincidentes.</div>';
                 return;
             }
             
@@ -1284,21 +1203,32 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
                         <thead class="bg-gray-100">
                             <tr>
                                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Paciente</th>
-                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Detalles</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Detalles (Peso/EG)</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">F. Internación</th>
+                                <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">F. Alta / Días</th>
                                 <th class="px-6 py-3 text-left text-xs font-semibold text-gray-600 uppercase tracking-wider">Status</th>
                                 <th class="px-6 py-3 text-right text-xs font-semibold text-gray-600 uppercase tracking-wider">Acciones</th>
                             </tr>
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-100">
-                            ${pacientes.map(p => `
+                            ${listToShow.map(p => {
+                                const dias = calculateDays(p.fechaInternacion, p.fechaEgreso);
+                                return `
                                 <tr class="hover:bg-blue-50 transition-colors">
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-sm font-bold text-gray-900">${p.nombre}</div>
-                                        <div class="text-xs text-gray-500">${p.fechaNacimiento || '--/--/----'}</div>
+                                        <div class="text-xs text-gray-500">Nac: ${formatDateDisplay(p.fechaNacimiento)}</div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <div class="text-xs text-gray-700"><span class="font-semibold">Peso:</span> ${p.peso ? p.peso + 'g' : '-'}</div>
                                         <div class="text-xs text-gray-700"><span class="font-semibold">EG:</span> ${p.edadGestacional ? p.edadGestacional + 's' : '-'}</div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-xs text-gray-700">${formatDateDisplay(p.fechaInternacion)}</div>
+                                    </td>
+                                    <td class="px-6 py-4 whitespace-nowrap">
+                                        <div class="text-xs text-gray-900 font-medium">${formatDateDisplay(p.fechaEgreso) || '(Internado)'}</div>
+                                        <div class="text-xs text-blue-600 font-bold">${dias !== '-' ? dias + ' días' : '-'}</div>
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap">
                                         <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
@@ -1311,42 +1241,52 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
                                     </td>
                                     <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                                         <div class="flex justify-end gap-2">
-                                            <button data-action="share" data-id="${p.id}" data-name="${p.nombre}" class="btn-share shadow-sm">
-                                                Compartir
-                                            </button>
-                                            <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="btn-edit shadow-sm">
-                                                Editar
-                                            </button>
-                                            <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="btn-danger shadow-sm">
-                                                Borrar
-                                            </button>
+                                            <button data-action="share" data-id="${p.id}" data-name="${p.nombre}" class="btn-share shadow-sm">Compartir</button>
+                                            <button data-action="edit" data-id="${p.id}" data-name="${p.nombre}" class="btn-edit shadow-sm">Editar</button>
+                                            <button data-action="delete" data-id="${p.id}" data-name="${p.nombre}" class="btn-danger shadow-sm">Borrar</button>
                                         </div>
                                     </td>
-                                </tr>
-                            `).join('')}
+                                </tr>`;
+                            }).join('')}
                         </tbody>
                     </table>
                 </div>
             `;
         }
 
+        // --- EXPORTACIÓN ---
+
         function exportToCsv(dataToExport, filename) {
             if (!dataToExport || dataToExport.length === 0) {
                 showToast("No hay datos para exportar", "warn");
                 return;
             }
-            const headers = ["ID", "Nombre", "F.Nac", "Peso", "EG", "Procedencia", "F.Int", "F.Egr", "Status", "Diagnosticos"];
+            const headers = ["Nombre", "F.Nacimiento", "Peso(g)", "EG(sem)", "Procedencia", "Fecha de internacion", "Fecha de alta", "Dias de internacion", "Status", "Diagnosticos"];
             const csvRows = [headers.join(',')];
 
             dataToExport.forEach(p => {
                 const escape = (val) => {
-                    if (val === undefined || val === null) return '';
+                    if (val === undefined || val === null || val === '') return '';
                     let str = String(val);
                     if (str.includes(',') || str.includes('"') || str.includes('\n')) str = `"${str.replace(/"/g, '""')}"`;
                     return str;
                 };
+
+                const dias = calculateDays(p.fechaInternacion, p.fechaEgreso);
                 const diagStr = Array.isArray(p.diagnosticos) ? p.diagnosticos.join('; ') : '';
-                const values = [p.id, p.nombre, p.fechaNacimiento, p.peso, p.edadGestacional, p.procedencia, p.fechaInternacion, p.fechaEgreso, p.statusEgreso, diagStr].map(escape);
+                
+                const values = [
+                    p.nombre, 
+                    formatDateDisplay(p.fechaNacimiento), 
+                    p.peso, 
+                    p.edadGestacional, 
+                    p.procedencia, 
+                    formatDateDisplay(p.fechaInternacion), 
+                    formatDateDisplay(p.fechaEgreso), 
+                    dias,
+                    p.statusEgreso || 'Internado', 
+                    diagStr
+                ].map(escape);
                 csvRows.push(values.join(','));
             });
 
@@ -1358,16 +1298,12 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
         }
 
         async function handleExportAll() {
-            showLoading(true, "Exportando Todo...");
+            showLoading(true, "Exportando base de datos completa...");
             try {
-                // Si tenemos la data en memoria y no supera el límite de 1000, podemos usarla
-                // Pero para "Export Todo" siempre es mejor asegurar un fetch fresco completo si es crítico
-                // Para este caso, usamos getDocs para asegurar TODA la base de datos histórica
                 const snapshot = await getDocs(query(pacientesCollectionRef, orderBy('createdAt', 'desc')));
                 const all = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-                exportToCsv(all, 'pacientes_neo_total_db');
+                exportToCsv(all, 'pacientes_neo_completo');
             } catch (error) {
-                console.error(error);
                 showToast("Error al exportar todo", "error");
             } finally {
                 showLoading(false);
@@ -1390,14 +1326,13 @@ ${Array.isArray(patient.diagnosticos) && patient.diagnosticos.length > 0 ? patie
                 "Leucomalacia Periventricular (LPV)", "Hidrocefalia Congénita", "Hidrocefalia Adquirida", "Mielomeningocele", "Microcefalia", "Macrocefalia",
                 "Síndrome de Abstinencia Neonatal (SAN)", "Hemorragia Subdural Neonatal", "Hemorragia Subaracnoidea Neonatal", "Hipotonía Neonatal",
                 "Parálisis Braquial Obstétrica", "Parálisis Facial Neonatal", "Ductus Arterioso Persistente (PCA)", "Comunicación Interauricular (CIA)",
-                "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición de Grandes Vasos (TGV)",
+                "Comunicación Interventricular (CIV)", "Coartación de Aorta (CoA)", "Tetralogía de Fallot", "Transposición Grandes Vacos (TGV)",
                 "Síndrome de Corazón Izquierdo Hipoplásico", "Canal Auriculoventricular", "Estenosis Pulmonar Crítica", "Estenosis Aórtica Crítica", "Shock Séptico Neonatal",
                 "Shock Cardiogénico Neonatal", "Shock Hipovolémico Neonatal", "Taquicardia Supraventricular Neonatal", "Sospecha de Enterocolitis Necrotizante",
                 "Enterocolitis Necrotizante Confirmada", "Reflujo Gastroesofágico (RGE) Neonatal", "Dificultades de Alimentación", "Intolerancia Alimentaria",
                 "Atresia Esofágica", "Fístula Traqueoesofágica", "Atresia Duodenal", "Estenosis Duodenal", "Atresia Yeyuno-ileal", "Malrotación Intestinal",
                 "Vólvulo Intestinal", "Enfermedad de Hirschsprung", "Íleo Meconial", "Ano Imperforado", "Gastrosquisis", "Onfalocele", "Diarrea Neonatal Infecciosa",
-                "Diarrea Neonatal Metabólica", "Deshidratación Neonatal",
-                "Prematurez", // Diagnóstico consolidado
+                "Diarrea Neonatal Metabólica", "Deshidratación Neonatal", "Prematurez",
                 "Restricción del Crecimiento Intrauterino (RCIU)", "Pequeño para la Edad Gestacional (PEG)", "Retinopatía del Prematuro (ROP) Estadio 1",
                 "Retinopatía del Prematuro (ROP) Estadio 2", "Retinopatía del Prematuro (ROP) Estadio 3", "Retinopatía del Prematuro (ROP) Estadio 4",
                 "Retinopatía del Prematuro (ROP) Estadio 5", "Osteopenia del Prematuro", "Hipoacusia Neonatal", "Bajo Peso al Nacer (BPN)", "Muy Bajo Peso al Nacer (MBPN)",
